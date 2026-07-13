@@ -24,6 +24,12 @@ final class SplitwiseAuthService {
 
     var isAuthenticated: Bool { accessToken != nil }
 
+    /// Reads the token directly from the Keychain, for use in contexts (like
+    /// App Intents) that run without an owning `SplitwiseAuthService` instance.
+    nonisolated static var currentAccessToken: String? {
+        KeychainStore.load(for: accessTokenKey)
+    }
+
     init() {
         accessToken = KeychainStore.load(for: Self.accessTokenKey)
     }

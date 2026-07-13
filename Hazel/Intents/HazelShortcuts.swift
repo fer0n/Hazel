@@ -17,5 +17,14 @@ struct HazelShortcuts: AppShortcutsProvider {
             shortTitle: "Add Transaction",
             systemImageName: "plus.circle"
         )
+        AppShortcut(
+            intent: AddSplitwiseExpenseIntent(),
+            phrases: [
+                "Add a Splitwise expense in \(.applicationName)",
+                "Split an expense in \(.applicationName)",
+            ],
+            shortTitle: "Add Splitwise Expense",
+            systemImageName: "person.2.circle"
+        )
     }
 }
