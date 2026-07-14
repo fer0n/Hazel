@@ -69,6 +69,12 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     @Parameter(title: "Split With")
     var splitwiseFriend: SplitwiseFriendEntity?
 
+    /// What to do when `splitwiseFriend` is left unset: silently fall back
+    /// to `SplitwiseDefaultFriendStore`'s app-configured default (the
+    /// out-of-the-box behavior), or prompt live via requestDisambiguation.
+    @Parameter(title: "If Split With Isn't Set", default: .defaultFriend)
+    var splitwiseFriendFallback: SplitwiseFriendFallback
+
     @Parameter(title: "Your Splitwise Share", description: "Only used when Split with Splitwise is Manual")
     var splitwiseOwnShare: Double?
 
@@ -86,17 +92,20 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     // splitwiseOwnShare). The entity/enum setup fields (categoryOverride,
     // accountOverride, splitwiseOptionOverride) are instead resolved with
     // requestDisambiguation, which passes its candidate list inline and so
-    // works while omitted here. `splitwiseFriend` is also absent: it's never
-    // actively requested anymore (see the fallback-to-default logic in
-    // perform()), so it doesn't need to be listed either. `card` is folded
-    // into the main sentence since it's required. Shortcuts collapses the
-    // rest under "Show More" rather than showing them inline.
+    // works while omitted here. `splitwiseFriend`/`splitwiseFriendFallback`
+    // are listed even though the "default friend" path never actively
+    // requests a value — kept visible so a specific automation can still
+    // pick a friend by hand or opt into live asking. `card` is folded into
+    // the main sentence since it's required. Shortcuts collapses the rest
+    // under "Show More" rather than showing them inline.
     static var parameterSummary: some ParameterSummary {
         Summary("Add \(\.$amount) at \(\.$merchant) with \(\.$card) to YNAB") {
             \.$templateChoice
             \.$newTemplateName
             \.$payeeOverride
             \.$autoMatchPattern
+            \.$splitwiseFriend
+            \.$splitwiseFriendFallback
             \.$splitwiseOwnShare
             \.$splitwiseRuntimeChoice
         }
@@ -270,14 +279,26 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             }
         }
 
-        // No live ask here: splitwiseFriend is only a manual per-automation
-        // override now (see parameterSummary's note). The normal case falls
-        // back to the app-configured default (ContentView's
-        // DefaultSplitwiseFriendRow) instead of prompting every run.
+        // splitwiseFriend is a manual per-automation override; when unset,
+        // splitwiseFriendFallback decides whether to silently use the
+        // app-configured default (ContentView's DefaultSplitwiseFriendRow)
+        // or prompt live, so it's opt-in rather than nagging every run.
         var resolvedFriend: SplitwiseFriendEntity? = splitwiseFriend
-        if splitwiseAction != .never, resolvedFriend == nil, let defaultFriend = SplitwiseDefaultFriendStore.load() {
-            logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — using default Splitwise friend")
-            resolvedFriend = SplitwiseFriendEntity(id: defaultFriend.id, name: defaultFriend.name)
+        if splitwiseAction != .never, resolvedFriend == nil {
+            switch splitwiseFriendFallback {
+            case .defaultFriend:
+                if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+                    logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — using default Splitwise friend")
+                    resolvedFriend = SplitwiseFriendEntity(id: defaultFriend.id, name: defaultFriend.name)
+                }
+            case .ask:
+                logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — requesting Splitwise friend")
+                let friends = try await SplitwiseFriendEntity.defaultQuery.suggestedEntities()
+                resolvedFriend = try await $splitwiseFriend.requestDisambiguation(
+                    among: friends,
+                    dialog: "Split with which Splitwise friend?"
+                )
+            }
         }
         var resolvedOwnShare: Double? = splitwiseOwnShare
         if splitwiseAction == .manual, resolvedOwnShare == nil {
