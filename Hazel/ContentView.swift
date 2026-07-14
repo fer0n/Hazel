@@ -101,26 +101,31 @@ private struct DefaultSplitwiseFriendRow: View {
     @State private var friends: [SplitwiseFriend] = []
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text("Default Splitwise Friend")
-                    .font(.headline)
-                Text(defaultFriend?.name ?? "None set")
-                    .font(.subheadline)
+        // The whole row is the Menu's label (not just the chevron), so the
+        // entire card is tappable rather than a small icon-sized target.
+        Menu {
+            ForEach(friends, id: \.id) { friend in
+                Button(friend.fullName) { select(friend) }
+            }
+            if defaultFriend != nil {
+                Divider()
+                Button("Clear", role: .destructive, action: clear)
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Default Splitwise Friend")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(defaultFriend?.name ?? "None set")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
                     .foregroundStyle(.secondary)
             }
-            Spacer()
-            Menu {
-                ForEach(friends, id: \.id) { friend in
-                    Button(friend.firstName) { select(friend) }
-                }
-                if defaultFriend != nil {
-                    Divider()
-                    Button("Clear", role: .destructive, action: clear)
-                }
-            } label: {
-                Image(systemName: "chevron.up.chevron.down")
-            }
+            .contentShape(Rectangle())
         }
         .padding()
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
@@ -131,7 +136,7 @@ private struct DefaultSplitwiseFriendRow: View {
     }
 
     private func select(_ friend: SplitwiseFriend) {
-        let value = SplitwiseDefaultFriend(id: friend.id, name: friend.firstName)
+        let value = SplitwiseDefaultFriend(id: friend.id, name: friend.fullName)
         defaultFriend = value
         try? SplitwiseDefaultFriendStore.save(value)
     }

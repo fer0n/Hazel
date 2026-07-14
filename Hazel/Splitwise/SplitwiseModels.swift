@@ -18,6 +18,13 @@ struct SplitwiseUser: Codable {
 struct SplitwiseFriend: Codable {
     let id: Int
     let firstName: String
+    let lastName: String?
+
+    /// Disambiguates friends sharing a first name (e.g. in the default
+    /// friend picker in ContentView.swift).
+    var fullName: String {
+        [firstName, lastName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
 }
 
 /// Non-group expense split between the signed-in user (who pays the full
