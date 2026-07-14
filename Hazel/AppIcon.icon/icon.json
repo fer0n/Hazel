@@ -20,8 +20,8 @@
               }
             }
           ],
-          "image-name" : "Inset.svg",
-          "name" : "Inset"
+          "image-name" : "Inner.svg",
+          "name" : "Inner"
         }
       ],
       "lighting" : "individual",
@@ -29,7 +29,7 @@
         "kind" : "neutral",
         "opacity" : 1
       },
-      "specular" : false,
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.4
@@ -78,8 +78,8 @@
               }
             }
           ],
-          "image-name" : "Arrow.svg",
-          "name" : "Arrow"
+          "image-name" : "Outer.svg",
+          "name" : "Outer"
         }
       ],
       "lighting" : "individual",
@@ -90,7 +90,7 @@
       "specular" : true,
       "translucency" : {
         "enabled" : true,
-        "value" : 0.4
+        "value" : 0.2
       }
     }
   ],
