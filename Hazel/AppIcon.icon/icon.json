@@ -4,12 +4,48 @@
   },
   "groups" : [
     {
+      "hidden" : false,
       "layers" : [
         {
           "fill-specializations" : [
             {
               "value" : {
-                "automatic-gradient" : "srgb:0.01961,0.94902,0.50588,1.00000",
+                "solid" : "display-p3:0.89745,1.00000,0.87160,1.00000"
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.89745,1.00000,0.87160,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Inset.svg",
+          "name" : "Inset"
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 1
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.4
+      }
+    },
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "srgb:0.38824,0.72549,0.07059,1.00000",
+                  "display-p3:0.37546,0.57685,0.18477,1.00000"
+                ],
                 "orientation" : {
                   "start" : {
                     "x" : 0.5,
@@ -26,33 +62,35 @@
               "appearance" : "dark",
               "value" : {
                 "linear-gradient" : [
-                  "display-p3:0.32586,0.86563,0.45075,1.00000",
-                  "srgb:0.01961,0.94902,0.50588,1.00000"
+                  "srgb:0.38824,0.72549,0.07059,1.00000",
+                  "display-p3:0.37546,0.57685,0.18477,1.00000"
                 ],
                 "orientation" : {
                   "start" : {
-                    "x" : 0.31862648923301107,
-                    "y" : 0.6282517825490818
+                    "x" : 0.5,
+                    "y" : 0
                   },
                   "stop" : {
-                    "x" : 0.84238838260014,
-                    "y" : 0.34784834909604595
+                    "x" : 0.5,
+                    "y" : 0.7
                   }
                 }
               }
             }
           ],
           "image-name" : "Arrow.svg",
-          "name" : "arrow"
+          "name" : "Arrow"
         }
       ],
+      "lighting" : "individual",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
       },
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.4
       }
     }
   ],
