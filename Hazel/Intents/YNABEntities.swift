@@ -39,7 +39,7 @@ nonisolated struct YNABAccountQuery: EntityQuery {
     /// auth instead surfaces from `perform()` when the transaction is
     /// actually submitted.
     private func allAccounts() async -> [YNABAccountEntity] {
-        guard let token = YNABAuthService.currentAccessToken else {
+        guard let token = await YNABAuthService.validAccessToken() else {
             logger.error("YNABAccountQuery: no access token in Keychain")
             return []
         }
@@ -80,7 +80,7 @@ nonisolated struct YNABCategoryQuery: EntityQuery {
 
     /// Never throws — see YNABAccountQuery.allAccounts().
     private func allCategories() async -> [YNABCategoryEntity] {
-        guard let token = YNABAuthService.currentAccessToken else {
+        guard let token = await YNABAuthService.validAccessToken() else {
             logger.error("YNABCategoryQuery: no access token in Keychain")
             return []
         }

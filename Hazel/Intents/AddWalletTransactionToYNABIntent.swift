@@ -114,7 +114,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         logger.log("perform() start — merchant=\(merchant, privacy: .public) amount=\(amount, privacy: .public) card=\(card, privacy: .public)")
 
-        guard let token = YNABAuthService.currentAccessToken else {
+        guard let token = await YNABAuthService.validAccessToken() else {
             logger.error("no YNAB access token in Keychain — not authenticated")
             throw YNABIntentError.notAuthenticated
         }

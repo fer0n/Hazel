@@ -112,7 +112,7 @@ struct YNABTemplateEditView: View {
     }
 
     private func loadCategories() async {
-        guard let token = YNABAuthService.currentAccessToken else {
+        guard let token = await YNABAuthService.validAccessToken() else {
             logger.error("no YNAB access token — not authenticated")
             return
         }

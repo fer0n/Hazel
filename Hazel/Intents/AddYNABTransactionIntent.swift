@@ -59,7 +59,7 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let token = YNABAuthService.currentAccessToken else {
+        guard let token = await YNABAuthService.validAccessToken() else {
             throw YNABIntentError.notAuthenticated
         }
 
