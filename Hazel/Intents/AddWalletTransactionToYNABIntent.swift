@@ -336,6 +336,9 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             logger.log("creating YNAB transaction: accountId=\(accountId, privacy: .public) amountMilliunits=\(milliunits, privacy: .public) payee=\(payeeName, privacy: .public) categoryId=\(categoryId ?? "nil", privacy: .public)")
             try await YNABService.createTransaction(transaction, token: token)
             logger.log("YNAB transaction created successfully")
+            if let categoryId {
+                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
+            }
         } catch {
             logger.error("YNAB createTransaction failed: \(String(describing: error), privacy: .public)")
             throw YNABIntentError.from(error)

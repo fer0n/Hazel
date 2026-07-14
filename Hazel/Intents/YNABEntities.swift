@@ -87,7 +87,7 @@ nonisolated struct YNABCategoryQuery: EntityQuery {
         do {
             let categories = try await YNABService.fetchCategories(token: token)
             logger.log("YNABCategoryQuery: fetched \(categories.count, privacy: .public) categories")
-            return categories.map { YNABCategoryEntity(id: $0.id, name: $0.name) }
+            return YNABCategoryUsageStore.sorted(categories).map { YNABCategoryEntity(id: $0.id, name: $0.name) }
         } catch {
             let mapped = YNABIntentError.from(error)
             logger.error("YNABCategoryQuery: fetchCategories failed: \(String(describing: mapped), privacy: .public)")

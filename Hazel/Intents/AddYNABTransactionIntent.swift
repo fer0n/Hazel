@@ -87,6 +87,9 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
                 approved: true
             )
             try await YNABService.createTransaction(transaction, token: token)
+            if let categoryId = category?.id {
+                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
+            }
         } catch {
             throw YNABIntentError.from(error)
         }
