@@ -308,7 +308,12 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
         var resolvedOwnShare: Double? = splitwiseOwnShare
         if splitwiseAction == .manual, resolvedOwnShare == nil {
             logger.log("splitwiseAction=manual — requesting own share")
-            resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the expense?")
+            let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
+            let friendName = resolvedFriend?.name ?? "your friend"
+            resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(payeeName), split with \(friendName)?")
+        }
+        if splitwiseAction == .manual, let resolvedOwnShare {
+            try SplitwiseExpenseHelper.validateOwnShare(resolvedOwnShare, amount: amount)
         }
 
         if changed {

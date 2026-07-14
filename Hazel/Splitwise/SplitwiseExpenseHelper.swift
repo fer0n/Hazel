@@ -12,6 +12,17 @@
 import Foundation
 
 nonisolated enum SplitwiseExpenseHelper {
+    /// Shared so callers (AddYNABTransactionIntent, AddWalletTransactionToYNABIntent)
+    /// can validate the share *before* creating a YNAB transaction, rather
+    /// than finding out only when addExpense is called afterwards — which
+    /// would leave the YNAB transaction created with no matching Splitwise
+    /// expense and just a dialog hint about it.
+    static func validateOwnShare(_ ownShare: Double, amount: Double) throws {
+        guard ownShare.isFinite, (0...amount).contains(ownShare) else {
+            throw SplitwiseIntentError.validation("Your share must be between 0 and the total amount.")
+        }
+    }
+
     /// Creates a non-group Splitwise expense split between the signed-in
     /// user (who pays the full cost) and `friend`; a nil `ownShare` splits
     /// the cost equally. Returns a human-readable summary of each share.
@@ -25,9 +36,7 @@ nonisolated enum SplitwiseExpenseHelper {
             throw SplitwiseIntentError.validation("Amount must be a positive number.")
         }
         if let ownShare {
-            guard ownShare.isFinite, (0...amount).contains(ownShare) else {
-                throw SplitwiseIntentError.validation("Your share must be between 0 and the total amount.")
-            }
+            try validateOwnShare(ownShare, amount: amount)
         }
 
         guard let token = SplitwiseAuthService.currentAccessToken else {
