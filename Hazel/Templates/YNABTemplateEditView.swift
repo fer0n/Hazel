@@ -1,0 +1,187 @@
+//
+//  YNABTemplateEditView.swift
+//  Hazel
+//
+//  Create/edit form for a single WalletTransactionConfig.Template. Reads and
+//  writes WalletTransactionConfigStore directly — the same store
+//  AddWalletTransactionToYNABIntent.perform() mutates — so there's a single
+//  source of truth regardless of whether a template was set up via a
+//  Shortcuts run or here.
+//
+
+import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "YNABTemplateEditView")
+
+struct YNABTemplateEditView: View {
+    /// nil means "creating a new template".
+    let templateName: String?
+    var onSave: () -> Void
+    var onDelete: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String
+    @State private var categories: [YNABCategory] = []
+    @State private var selectedCategoryId: String?
+    @State private var splitwiseOption: SplitwiseTemplateOption
+    @State private var autoMatchRules: [WalletTransactionConfig.AutoMatchRule]
+    @State private var isLoadingCategories = false
+    @State private var errorMessage: String?
+    @State private var showDeleteConfirmation = false
+
+    init(templateName: String?, onSave: @escaping () -> Void, onDelete: @escaping () -> Void) {
+        self.templateName = templateName
+        self.onSave = onSave
+        self.onDelete = onDelete
+        let existing = templateName.flatMap { WalletTransactionConfigStore.load().templates[$0] }
+        _name = State(initialValue: templateName ?? "")
+        _selectedCategoryId = State(initialValue: existing?.categoryId)
+        _splitwiseOption = State(initialValue: existing?.splitwiseOption ?? .never)
+        _autoMatchRules = State(initialValue: existing?.autoMatch ?? [])
+    }
+
+    var body: some View {
+        Form {
+            Section("Name") {
+                TextField("Template Name", text: $name)
+            }
+
+            Section("Category") {
+                if isLoadingCategories {
+                    ProgressView()
+                } else {
+                    Picker("Category", selection: $selectedCategoryId) {
+                        Text("None").tag(String?.none)
+                        ForEach(categories, id: \.id) { category in
+                            Text(category.name).tag(Optional(category.id))
+                        }
+                    }
+                }
+            }
+
+            Section("Splitwise") {
+                Picker("Split Option", selection: $splitwiseOption) {
+                    ForEach([SplitwiseTemplateOption.always, .manual, .ask, .never], id: \.self) { option in
+                        Text(option.label).tag(option)
+                    }
+                }
+            }
+
+            Section("Auto-Match Rules") {
+                ForEach(autoMatchRules.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField("Pattern (text or regex)", text: $autoMatchRules[index].pattern)
+                        TextField("Payee Name", text: $autoMatchRules[index].payeeName)
+                    }
+                }
+                .onDelete { autoMatchRules.remove(atOffsets: $0) }
+                Button("Add Rule") {
+                    autoMatchRules.append(.init(pattern: "", payeeName: ""))
+                }
+            }
+
+            if templateName != nil {
+                Section {
+                    Button("Delete Template", role: .destructive) {
+                        showDeleteConfirmation = true
+                    }
+                }
+            }
+
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+        }
+        .navigationTitle(templateName ?? "New Template")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save", action: save)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .task { await loadCategories() }
+        .confirmationDialog(
+            "Delete this template?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: delete)
+        }
+    }
+
+    private func loadCategories() async {
+        guard let token = YNABAuthService.currentAccessToken else {
+            logger.error("no YNAB access token — not authenticated")
+            return
+        }
+        isLoadingCategories = true
+        defer { isLoadingCategories = false }
+        do {
+            let fetched = try await YNABService.fetchCategories(token: token)
+            categories = YNABCategoryUsageStore.sorted(fetched)
+        } catch {
+            logger.error("failed to load categories: \(String(describing: error), privacy: .public)")
+            errorMessage = "Failed to load categories: \(error.localizedDescription)"
+        }
+    }
+
+    private func save() {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else { return }
+
+        var config = WalletTransactionConfigStore.load()
+        if trimmedName != templateName, config.templates[trimmedName] != nil {
+            errorMessage = "A template named \"\(trimmedName)\" already exists."
+            return
+        }
+
+        let cleanedRules = autoMatchRules.filter { !$0.pattern.isEmpty && !$0.payeeName.isEmpty }
+        let template = WalletTransactionConfig.Template(
+            categoryId: selectedCategoryId,
+            autoMatch: cleanedRules,
+            splitwiseOption: splitwiseOption
+        )
+
+        if let templateName, templateName != trimmedName {
+            config.templates.removeValue(forKey: templateName)
+            for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
+                config.merchants[key]?.templateName = trimmedName
+            }
+        }
+        config.templates[trimmedName] = template
+
+        do {
+            try WalletTransactionConfigStore.save(config)
+            logger.log("saved template \(trimmedName, privacy: .public)")
+            onSave()
+            dismiss()
+        } catch {
+            logger.error("failed to save template: \(String(describing: error), privacy: .public)")
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
+    }
+
+    private func delete() {
+        guard let templateName else { return }
+        var config = WalletTransactionConfigStore.load()
+        config.templates.removeValue(forKey: templateName)
+        config.merchants = config.merchants.filter { $0.value.templateName != templateName }
+        do {
+            try WalletTransactionConfigStore.save(config)
+            logger.log("deleted template \(templateName, privacy: .public)")
+            onDelete()
+            dismiss()
+        } catch {
+            logger.error("failed to delete template: \(String(describing: error), privacy: .public)")
+            errorMessage = "Failed to delete: \(error.localizedDescription)"
+        }
+    }
+}
+
+#Preview {
+    NavigationStack {
+        YNABTemplateEditView(templateName: nil, onSave: {}, onDelete: {})
+    }
+}

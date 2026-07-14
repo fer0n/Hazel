@@ -12,44 +12,62 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Hazel")
-                .font(.largeTitle.bold())
-                .padding(.bottom, 8)
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text("Hazel")
+                    .font(.largeTitle.bold())
+                    .padding(.bottom, 8)
 
-            AccountConnectionRow(
-                title: "YNAB",
-                isConnected: ynabAuth.isAuthenticated,
-                connect: ynabAuth.signIn,
-                disconnect: ynabAuth.signOut
-            )
+                AccountConnectionRow(
+                    title: "YNAB",
+                    isConnected: ynabAuth.isAuthenticated,
+                    connect: ynabAuth.signIn,
+                    disconnect: ynabAuth.signOut
+                )
 
-            AccountConnectionRow(
-                title: "Splitwise",
-                isConnected: splitwiseAuth.isAuthenticated,
-                connect: splitwiseAuth.signIn,
-                disconnect: splitwiseAuth.signOut
-            )
+                AccountConnectionRow(
+                    title: "Splitwise",
+                    isConnected: splitwiseAuth.isAuthenticated,
+                    connect: splitwiseAuth.signIn,
+                    disconnect: splitwiseAuth.signOut
+                )
 
-            if splitwiseAuth.isAuthenticated {
-                DefaultSplitwiseFriendRow()
+                if splitwiseAuth.isAuthenticated {
+                    DefaultSplitwiseFriendRow()
+                }
+
+                NavigationLink {
+                    TemplatesView()
+                } label: {
+                    HStack {
+                        Text("Templates")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Delete Wallet Transaction Config") {
+                    try? WalletTransactionConfigStore.delete()
+                    didDeleteWalletConfig = true
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                if didDeleteWalletConfig {
+                    Text("Deleted")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-
-            Spacer()
-
-            Button("Delete Wallet Transaction Config") {
-                try? WalletTransactionConfigStore.delete()
-                didDeleteWalletConfig = true
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            if didDeleteWalletConfig {
-                Text("Deleted")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            .padding()
         }
-        .padding()
         // Picks up a token invalidated by an App Intent (e.g. an expired
         // YNAB token found while running a Shortcut) while this view's
         // YNABAuthService instance was already alive.
