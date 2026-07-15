@@ -15,10 +15,11 @@ import SwiftUI
 
 struct HowHazelWorksView: View {
     var body: some View {
-        Form {
+        List {
             Section {
                 Text("Hazel connects to YNAB and Splitwise using their official APIs to add transactions and expenses on your behalf, and to import bank statement files into YNAB.")
             }
+            .cardRowBackground()
 
             InfoSection(
                 icon: "lock.fill",
@@ -44,6 +45,7 @@ struct HowHazelWorksView: View {
                 text: "Hazel creates the transactions and expenses you ask for in YNAB and Splitwise. Any bank or CSV statement files you import are read only on your device. Hazel keeps no database of its own and never shares your financial data with anyone else."
             )
         }
+        .themedList(background: .backgroundColor)
         .navigationTitle("How Hazel Works")
     }
 }
@@ -61,6 +63,7 @@ private struct InfoSection: View {
             Text(text)
                 .foregroundStyle(.secondary)
         }
+        .cardRowBackground()
     }
 }
 
