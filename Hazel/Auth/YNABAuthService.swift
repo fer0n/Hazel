@@ -6,14 +6,14 @@
 //  token — the implicit grant this used to use has a fixed 2-hour access
 //  token with no way to renew it, forcing a re-`signIn()` every couple of
 //  hours. The trade-off: the code grant's token exchange requires a client
-//  secret. PKCE (RFC 7636) is layered on top here for defense in depth
-//  against a code-interception attack via the shared "hazel://" URL scheme,
-//  but per YNAB's docs it doesn't let a client skip the secret the way it
-//  would for, say, Google or GitHub — client_secret stays a required field
-//  in the token request either way. Since Hazel is a personal,
-//  non-distributed app (like SplitwiseAuthService, which has the same
-//  constraint), the secret lives in the gitignored Secrets.swift rather
-//  than a backend server.
+//  secret, which can't live in the app once Hazel is distributed to more
+//  than one device — anything compiled into the binary is extractable from
+//  any install. The actual token exchange (and refresh) is delegated to the
+//  hazel-oauth-relay Cloudflare Worker (see ../../oauth-relay/README.md),
+//  the only place that holds the secret; this service only ever sends it a
+//  `code`/`code_verifier` or `refresh_token`, never the secret itself.
+//  PKCE (RFC 7636) is layered on top of that for defense in depth against a
+//  code-interception attack via the shared "hazel://" URL scheme.
 //
 //  Tokens saved before this change (implicit grant, no refresh token, no
 //  recorded expiry) keep working as-is until they naturally expire and a
@@ -127,12 +127,8 @@ final class YNABAuthService {
         pendingCodeVerifier = nil
 
         do {
-            let token = try await Self.requestToken(bodyParams: [
-                "client_id": Secrets.ynabClientID,
-                "client_secret": Secrets.ynabClientSecret,
-                "grant_type": "authorization_code",
+            let token = try await Self.requestToken(path: "/ynab/token", bodyParams: [
                 "code": code,
-                "redirect_uri": OAuthConfig.ynabRedirectURI,
                 "code_verifier": codeVerifier,
             ])
             Self.save(token)
@@ -153,10 +149,7 @@ final class YNABAuthService {
     private nonisolated static func refreshAccessToken() async -> String? {
         guard let refreshToken = KeychainStore.load(for: refreshTokenKey) else { return nil }
         do {
-            let token = try await requestToken(bodyParams: [
-                "client_id": Secrets.ynabClientID,
-                "client_secret": Secrets.ynabClientSecret,
-                "grant_type": "refresh_token",
+            let token = try await requestToken(path: "/ynab/refresh", bodyParams: [
                 "refresh_token": refreshToken,
             ])
             save(token)
@@ -181,20 +174,21 @@ final class YNABAuthService {
 
     // MARK: - Token exchange
 
-    private nonisolated static func requestToken(bodyParams: [String: String]) async throws -> YNABTokenResponse {
-        var request = URLRequest(url: URL(string: "https://app.ynab.com/oauth/token")!)
+    /// Calls the oauth-relay Worker rather than app.ynab.com/oauth/token
+    /// directly — the Worker is the only place holding client_secret.
+    private nonisolated static func requestToken(path: String, bodyParams: [String: String]) async throws -> YNABTokenResponse {
+        var request = URLRequest(url: URL(string: OAuthConfig.oauthRelayBaseURL + path)!)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = bodyParams
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: bodyParams)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw YNABTokenExchangeError.other }
-        // YNAB returns 400 for both a malformed request and an expired/
-        // revoked/reused refresh token (standard OAuth `invalid_grant`) —
-        // treated as the latter since that's the case worth reacting to.
+        // The relay passes YNAB's own token-endpoint status through
+        // unchanged; YNAB returns 400 for both a malformed request and an
+        // expired/revoked/reused refresh token (standard OAuth
+        // `invalid_grant`) — treated as the latter since that's the case
+        // worth reacting to.
         if http.statusCode == 400 { throw YNABTokenExchangeError.invalidGrant }
         guard (200...299).contains(http.statusCode) else { throw YNABTokenExchangeError.other }
         return try JSONDecoder().decode(YNABTokenResponse.self, from: data)

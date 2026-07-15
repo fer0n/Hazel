@@ -4,12 +4,13 @@ title: Hazel Privacy Policy
 
 # Privacy Policy for Hazel
 
-**Last updated:** July 13, 2026
+**Last updated:** July 15, 2026
 
-Hazel is a personal-use application that connects to YNAB and Splitwise on
-behalf of a single user (its developer) to add transactions and import bank
-statement files. It is not distributed or offered as a service to the
-public.
+Hazel is a personal-finance utility that connects to your own YNAB and/or
+Splitwise account to add transactions and import bank statement files.
+Each installation only ever accesses the YNAB/Splitwise account you
+connect it to — your tokens and data are never visible to, or shared
+with, any other user of the app.
 
 ## Data we access
 
@@ -26,12 +27,19 @@ to extract transaction data for import into YNAB.
 ## How data is handled and stored
 
 - OAuth access tokens (and, where issued, refresh tokens) are stored only in
-  the device's Keychain, protected by the operating system, and are never
-  transmitted anywhere except directly to YNAB's or Splitwise's own APIs
-  over HTTPS.
-- Hazel has no backend server. There is no database, analytics service, or
-  third party that receives your financial data — data obtained through the
-  YNAB API or the Splitwise API is not knowingly passed to any third party.
+  the device's Keychain, protected by the operating system, and are used
+  only to call YNAB's or Splitwise's own APIs directly over HTTPS.
+- Signing in (and silently refreshing an expired token) passes through a
+  small relay service Hazel's developer runs on Cloudflare Workers, whose
+  only job is to complete the OAuth token exchange with YNAB/Splitwise
+  using a credential that can't safely be stored in the app itself. It
+  does not store anything — it relays the exchange and forgets it — and it
+  never sees your budget, transaction, or expense data, only the
+  short-lived codes/tokens involved in signing in.
+- Beyond that relay, Hazel has no backend server. There is no database,
+  analytics service, or third party that receives your financial data —
+  data obtained through the YNAB API or the Splitwise API is not knowingly
+  passed to any third party.
 - Imported statement files are read locally on-device to build transactions
   for YNAB; Hazel does not upload or retain copies of these files beyond
   what's needed to complete the import.

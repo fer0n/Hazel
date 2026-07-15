@@ -3,9 +3,13 @@
 //  Hazel
 //
 //  Splitwise only offers the authorization code grant, which requires a
-//  client secret for the token exchange. Since Hazel is a personal,
-//  non-distributed app, the secret lives in the gitignored Secrets.swift
-//  rather than a backend.
+//  client secret for the token exchange — one that can't live in the app
+//  once Hazel is distributed to more than one device, since anything
+//  compiled into the binary is extractable from any install. The actual
+//  exchange is delegated to the hazel-oauth-relay Cloudflare Worker (see
+//  ../../oauth-relay/README.md), the only place that holds the secret;
+//  this service only ever sends it an authorization `code`, never the
+//  secret itself.
 //
 
 import AuthenticationServices
@@ -76,23 +80,15 @@ final class SplitwiseAuthService {
             let code = components.queryItems?.first(where: { $0.name == "code" })?.value
         else { return }
 
-        var request = URLRequest(url: URL(string: "https://secure.splitwise.com/oauth/token")!)
+        // Calls the oauth-relay Worker rather than secure.splitwise.com/
+        // oauth/token directly — the Worker is the only place holding
+        // client_secret.
+        var request = URLRequest(url: URL(string: OAuthConfig.oauthRelayBaseURL + "/splitwise/token")!)
         request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        let bodyParams = [
-            "client_id": Secrets.splitwiseClientID,
-            "client_secret": Secrets.splitwiseClientSecret,
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": OAuthConfig.splitwiseRedirectURI,
-        ]
-        request.httpBody = bodyParams
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["code": code])
             let (data, _) = try await URLSession.shared.data(for: request)
             let token = try JSONDecoder().decode(SplitwiseTokenResponse.self, from: data)
             accessToken = token.accessToken
