@@ -50,13 +50,16 @@ to extract transaction data for import into YNAB.
   visible in the app, and never leaves the device or is sent anywhere other
   than YNAB's or Splitwise's own APIs once it syncs.
 - The wallet automations' "Ensure Completion" option (on by default) briefly
-  stores a short summary (amount and merchant name) locally and requests
-  permission to send you a local notification if that run is interrupted
-  before finishing — since there's no way for Hazel to resume a Shortcuts
-  run that was cut off partway through. That notification is generated and
-  delivered entirely on-device; nothing about it is sent anywhere. The
-  summary is visible in the app's "Transaction Drafts" screen and is deleted
-  as soon as the transaction completes (or you dismiss it there yourself).
+  stores what that run was given (amount, merchant name, and — for YNAB —
+  the card label) locally, and requests permission to send you a local
+  notification if the run is interrupted before finishing — since there's
+  no way for Hazel to resume a Shortcuts run that was cut off partway
+  through. That notification is generated and delivered entirely on-device;
+  nothing about it is sent anywhere. Tapping it (or a matching entry in the
+  app's "Transaction Drafts" screen) opens Hazel to finish creating that
+  transaction/expense using the same YNAB/Splitwise API calls as normal.
+  The stored draft is deleted as soon as the transaction completes (or you
+  dismiss it yourself).
 
 ## Retention
 
