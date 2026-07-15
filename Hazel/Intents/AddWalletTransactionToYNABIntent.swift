@@ -124,10 +124,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
         logger.log("perform() start — merchant=\(merchant, privacy: .public) amount=\(amount, privacy: .public) card=\(card, privacy: .public)")
 
         let draftId = ensureCompletion
-            ? TransactionDraftGuard.begin(
-                summary: "\(amount.formatted(.number.precision(.fractionLength(2)))) at \(merchant)",
-                service: .ynab
-              )
+            ? TransactionDraftGuard.begin(.ynabWallet(merchant: merchant, amount: amount, card: card))
             : nil
 
         await PendingOperationQueue.shared.flush()

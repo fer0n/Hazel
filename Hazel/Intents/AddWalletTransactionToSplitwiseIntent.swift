@@ -102,10 +102,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
         logger.log("perform() start — merchant=\(merchant, privacy: .public) amount=\(amount, privacy: .public)")
 
         let draftId = ensureCompletion
-            ? TransactionDraftGuard.begin(
-                summary: "\(amount.formatted(.number.precision(.fractionLength(2)))) at \(merchant)",
-                service: .splitwise
-              )
+            ? TransactionDraftGuard.begin(.splitwiseWallet(merchant: merchant, amount: amount))
             : nil
 
         await PendingOperationQueue.shared.flush()

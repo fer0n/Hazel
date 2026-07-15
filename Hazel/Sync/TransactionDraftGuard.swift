@@ -14,7 +14,11 @@
 //  gone, with no state left to pick back up from. This only guarantees the
 //  user gets *notified* it didn't finish: the notification is registered
 //  with the OS up front and only cancelled by a successful completion, so
-//  it fires on its own even with zero chance to run cleanup code.
+//  it fires on its own even with zero chance to run cleanup code. Tapping it
+//  opens Hazel to ContinueYNABWalletTransactionView/
+//  ContinueSplitwiseWalletTransactionView (see DraftNotificationRouter) to
+//  actually finish the transaction from scratch, using the raw inputs saved
+//  in `payload`.
 //
 
 import Foundation
@@ -33,8 +37,8 @@ nonisolated enum TransactionDraftGuard {
     private static let fireDelay: TimeInterval = 30
 
     @discardableResult
-    static func begin(summary: String, service: TransactionDraft.Service) -> UUID {
-        let draft = TransactionDraft(id: UUID(), startedAt: Date(), summary: summary, service: service)
+    static func begin(_ payload: TransactionDraft.Payload) -> UUID {
+        let draft = TransactionDraft(id: UUID(), startedAt: Date(), payload: payload)
         var drafts = TransactionDraftStore.load()
         drafts.append(draft)
         do {
@@ -66,7 +70,7 @@ nonisolated enum TransactionDraftGuard {
     private static func scheduleNotification(for draft: TransactionDraft) {
         let content = UNMutableNotificationContent()
         content.title = "Continue Adding Transaction"
-        content.body = "\(draft.summary) — still needs to be added to \(draft.service.displayName)."
+        content.body = "\(draft.summary) — still needs to be added to \(draft.service.displayName). Tap to finish."
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: fireDelay, repeats: false)
