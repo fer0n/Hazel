@@ -21,18 +21,6 @@ import os
 
 private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "ContinueYNABWalletTransactionView")
 
-extension SplitwiseSplitOption {
-    /// Plain-text label for Hazel's own SwiftUI screens — mirrors
-    /// SplitwiseTemplateOption.label in TemplatesView.swift.
-    var label: String {
-        switch self {
-        case .always: "Split Equally"
-        case .manual: "Split Manually"
-        case .never: "Don't Split"
-        }
-    }
-}
-
 struct ContinueYNABWalletTransactionView: View {
     let draft: TransactionDraft
 
@@ -77,12 +65,7 @@ struct ContinueYNABWalletTransactionView: View {
     }
 
     private var resolvedSplitwiseAction: SplitwiseSplitOption {
-        switch effectiveSplitwiseOption {
-        case .never: .never
-        case .always: .always
-        case .manual: .manual
-        case .ask: splitwiseRuntimeChoice ?? .never
-        }
+        WalletAutomationDialog.resolvedSplitwiseAction(for: effectiveSplitwiseOption, runtimeChoice: splitwiseRuntimeChoice)
     }
 
     private var canSubmit: Bool {
@@ -353,7 +336,12 @@ struct ContinueYNABWalletTransactionView: View {
         }
 
         let action = resolvedSplitwiseAction
-        var ownShare: Double?
+
+        // `let`, not `var` — assigned exactly once below (or the function
+        // returns first) — since these are captured by the `async let`
+        // below, a mutable var would be flagged as a data-race risk under
+        // Swift 6 strict concurrency checking.
+        let ownShare: Double?
         if action == .manual {
             guard let parsed = Double(ownShareText) else {
                 errorMessage = "Enter a valid share amount."
@@ -366,15 +354,19 @@ struct ContinueYNABWalletTransactionView: View {
                 return
             }
             ownShare = parsed
+        } else {
+            ownShare = nil
         }
 
-        var friend: SplitwiseFriendEntity?
+        let friend: SplitwiseFriendEntity?
         if action != .never {
             guard let selectedFriendId, let match = friends.first(where: { $0.id == selectedFriendId }) else {
                 errorMessage = "Pick a Splitwise friend."
                 return
             }
             friend = SplitwiseFriendEntity(id: match.id, firstName: match.firstName, fullName: match.fullName)
+        } else {
+            friend = nil
         }
 
         let milliunits = -Int((amount * 1000).rounded())
@@ -395,16 +387,7 @@ struct ContinueYNABWalletTransactionView: View {
 
         do {
             let outcome = try await ynabOutcome
-            var dialog: String
-            switch outcome {
-            case .created:
-                if let finalCategoryId {
-                    YNABCategoryUsageStore.recordUsage(categoryId: finalCategoryId)
-                }
-                dialog = "Added \(formattedAmount) at \(finalPayeeName)"
-            case .queued:
-                dialog = "You're offline — queued \(formattedAmount) at \(finalPayeeName) to add to YNAB once you're back online"
-            }
+            var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: finalPayeeName, categoryId: finalCategoryId)
             if let fragment = await splitDialogFragment {
                 dialog += fragment
             }
@@ -423,23 +406,6 @@ struct ContinueYNABWalletTransactionView: View {
         ownShare: Double?
     ) async -> String? {
         guard action != .never, let friend else { return nil }
-        do {
-            let outcome = try await SplitwiseExpenseHelper.addExpense(
-                amount: amount,
-                description: description,
-                friend: friend,
-                ownShare: (action == .manual) ? ownShare : nil
-            )
-            switch outcome {
-            case .created(let shareSummary):
-                return ", split with Splitwise — \(shareSummary)"
-            case .queued:
-                return ". Splitwise is offline — the split will sync automatically"
-            }
-        } catch {
-            let message = (error as? SplitwiseIntentError)?.localizedStringResource
-                ?? "Couldn't add the Splitwise expense."
-            return ". \(String(localized: message))"
-        }
+        return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare)
     }
 }

@@ -1,0 +1,123 @@
+//
+//  WalletAutomationDialog.swift
+//  Hazel
+//
+//  Shared "what actually happened, in words" logic for the wallet
+//  automations — used identically by the Shortcuts intents
+//  (AddYNABTransactionIntent, AddWalletTransactionToYNABIntent,
+//  AddWalletTransactionToSplitwiseIntent) and their in-app resume
+//  counterparts (ContinueYNABWalletTransactionView,
+//  ContinueSplitwiseWalletTransactionView). The two entry points ask their
+//  remaining questions completely differently (requestValue/
+//  requestDisambiguation vs. a SwiftUI form), but everything from "here's
+//  what to say about the outcome" onward was byte-for-byte duplicated
+//  across up to three files — pulled out here so a wording or behavior fix
+//  only has to happen once instead of drifting apart between call sites.
+//
+
+import Foundation
+
+extension SplitwiseSplitOption {
+    /// Plain-text label for Hazel's own SwiftUI screens — mirrors
+    /// SplitwiseTemplateOption.label in TemplatesView.swift.
+    var label: String {
+        switch self {
+        case .always: "Split Equally"
+        case .manual: "Split Manually"
+        case .never: "Don't Split"
+        }
+    }
+}
+
+nonisolated enum WalletAutomationDialog {
+    /// Maps a template's stored Splitwise setting to a concrete per-run
+    /// action, given a live "ask each time" answer if one's already in
+    /// hand. Only used by the Continue views: their form's bound state
+    /// already holds the answer (or a not-yet-chosen nil while the submit
+    /// button stays disabled), unlike the intents, which resolve "ask" via
+    /// a genuine requestValue side effect and so don't route through this.
+    static func resolvedSplitwiseAction(
+        for templateOption: SplitwiseTemplateOption,
+        runtimeChoice: SplitwiseSplitOption?
+    ) -> SplitwiseSplitOption {
+        switch templateOption {
+        case .never: .never
+        case .always: .always
+        case .manual: .manual
+        case .ask: runtimeChoice ?? .never
+        }
+    }
+
+    /// Attempts the Splitwise half of a YNAB-primary transaction and
+    /// describes the result as a dialog fragment to append. Never throws:
+    /// a Splitwise failure only ever shows up as a note in the dialog, it
+    /// never fails the whole run — the YNAB write already succeeded or
+    /// queued by the time this is worth calling.
+    static func splitDialogFragment(
+        amount: Double,
+        description: String,
+        friend: SplitwiseFriendEntity,
+        ownShare: Double?
+    ) async -> String {
+        do {
+            let outcome = try await SplitwiseExpenseHelper.addExpense(
+                amount: amount,
+                description: description,
+                friend: friend,
+                ownShare: ownShare
+            )
+            switch outcome {
+            case .created(let shareSummary):
+                return ", split with Splitwise — \(shareSummary)"
+            case .queued:
+                return ". Splitwise is offline — the split will sync automatically"
+            }
+        } catch {
+            let message = (error as? SplitwiseIntentError)?.localizedStringResource
+                ?? "Couldn't add the Splitwise expense."
+            return ". \(String(localized: message))"
+        }
+    }
+
+    /// Records category usage on success and describes a YNAB write as a
+    /// dialog string — shared by the standalone YNAB intent and both
+    /// wallet-to-YNAB entry points, all of which use this exact wording.
+    static func handleYNABOutcome(
+        _ outcome: PendingSyncOutcome,
+        formattedAmount: String,
+        payeeName: String,
+        categoryId: String?
+    ) -> String {
+        switch outcome {
+        case .created:
+            if let categoryId {
+                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
+            }
+            return "Added \(formattedAmount) at \(payeeName)"
+        case .queued:
+            return "You're offline — queued \(formattedAmount) at \(payeeName) to add to YNAB once you're back online"
+        }
+    }
+
+    /// Describes a Splitwise-only wallet expense's outcome — shared by
+    /// AddWalletTransactionToSplitwiseIntent and
+    /// ContinueSplitwiseWalletTransactionView. Distinct from the standalone
+    /// AddSplitwiseExpenseIntent, which deliberately omits the amount from
+    /// its own dialog wording.
+    static func splitwiseWalletDialog(
+        outcome: SplitwiseExpenseOutcome,
+        formattedAmount: String,
+        description: String
+    ) -> String {
+        switch outcome {
+        case .created(let shareSummary):
+            "Added \(formattedAmount) at \(description) — \(shareSummary)"
+        case .queued:
+            "You're offline — queued \(formattedAmount) at \(description) to add to Splitwise once you're back online"
+        }
+    }
+
+    static func splitwiseSkippedDialog(description: String) -> String {
+        "Skipping Splitwise for \(description) — this merchant is set to not split."
+    }
+}

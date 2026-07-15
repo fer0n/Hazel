@@ -270,7 +270,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             if let draftId {
                 TransactionDraftGuard.complete(draftId)
             }
-            return .result(dialog: "Skipping Splitwise for \(expenseDescription) — this merchant is set to not split.")
+            return .result(dialog: "\(WalletAutomationDialog.splitwiseSkippedDialog(description: expenseDescription))")
         }
 
         var resolvedOwnShare: Double? = splitwiseOwnShare
@@ -294,14 +294,9 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             if let draftId {
                 TransactionDraftGuard.complete(draftId)
             }
-            switch outcome {
-            case .created(let shareSummary):
-                logger.log("Splitwise expense created: \(shareSummary, privacy: .public)")
-                return .result(dialog: "Added \(formattedAmount) at \(expenseDescription) — \(shareSummary)")
-            case .queued:
-                logger.log("Splitwise expense queued — offline")
-                return .result(dialog: "You're offline — queued \(formattedAmount) at \(expenseDescription) to add to Splitwise once you're back online")
-            }
+            let dialog = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: expenseDescription)
+            logger.log("Splitwise result: \(dialog, privacy: .public)")
+            return .result(dialog: "\(dialog)")
         } catch {
             logger.error("Splitwise addExpense failed: \(String(describing: error), privacy: .public)")
             // addExpense already throws a well-formed SplitwiseIntentError in

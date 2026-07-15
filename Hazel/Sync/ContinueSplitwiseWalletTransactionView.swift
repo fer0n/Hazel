@@ -57,12 +57,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
     }
 
     private var resolvedSplitwiseAction: SplitwiseSplitOption {
-        switch effectiveSplitOption {
-        case .never: .never
-        case .always: .always
-        case .manual: .manual
-        case .ask: splitwiseRuntimeChoice ?? .never
-        }
+        WalletAutomationDialog.resolvedSplitwiseAction(for: effectiveSplitOption, runtimeChoice: splitwiseRuntimeChoice)
     }
 
     private var canSubmit: Bool {
@@ -277,7 +272,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
         let action = resolvedSplitwiseAction
         guard action != .never else {
             TransactionDraftGuard.complete(draft.id)
-            resultMessage = "Skipping Splitwise for \(finalDescription) — this merchant is set to not split."
+            resultMessage = WalletAutomationDialog.splitwiseSkippedDialog(description: finalDescription)
             return
         }
 
@@ -305,12 +300,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
                 ownShare: ownShare
             )
             TransactionDraftGuard.complete(draft.id)
-            switch outcome {
-            case .created(let shareSummary):
-                resultMessage = "Added \(formattedAmount) at \(finalDescription) — \(shareSummary)"
-            case .queued:
-                resultMessage = "You're offline — queued \(formattedAmount) at \(finalDescription) to add to Splitwise once you're back online"
-            }
+            resultMessage = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: finalDescription)
         } catch {
             errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the Splitwise expense."
         }

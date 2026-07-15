@@ -361,45 +361,17 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 return ". No default Splitwise friend set — pick one in Hazel, or set \"Split With\" for this automation."
             }
             let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
-            do {
-                let splitOutcome = try await SplitwiseExpenseHelper.addExpense(
-                    amount: amount,
-                    description: payeeName,
-                    friend: friend,
-                    ownShare: ownShare
-                )
-                switch splitOutcome {
-                case .created(let shareSummary):
-                    logger.log("Splitwise expense created: \(shareSummary, privacy: .public)")
-                    return ", split with Splitwise — \(shareSummary)"
-                case .queued:
-                    logger.log("Splitwise expense queued — offline")
-                    return ". Splitwise is offline — the split will sync automatically"
-                }
-            } catch {
-                let message = (error as? SplitwiseIntentError)?.localizedStringResource
-                    ?? "Couldn't add the Splitwise expense."
-                logger.error("Splitwise split failed: \(String(describing: error), privacy: .public)")
-                return ". \(String(localized: message))"
-            }
+            let fragment = await WalletAutomationDialog.splitDialogFragment(amount: amount, description: payeeName, friend: friend, ownShare: ownShare)
+            logger.log("Splitwise split result: \(fragment, privacy: .public)")
+            return fragment
         }
 
         async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payeeName)")
         async let splitDialogFragment = createSplitIfNeeded()
 
         let outcome = try await ynabOutcome
-        var dialog: String
-        switch outcome {
-        case .created:
-            logger.log("YNAB transaction created successfully")
-            if let categoryId {
-                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
-            }
-            dialog = "Added \(formattedAmount) at \(payeeName)"
-        case .queued:
-            logger.log("YNAB transaction queued — offline")
-            dialog = "You're offline — queued \(formattedAmount) at \(payeeName) to add to YNAB once you're back online"
-        }
+        var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: payeeName, categoryId: categoryId)
+        logger.log("YNAB result: \(dialog, privacy: .public)")
 
         if let fragment = await splitDialogFragment {
             dialog += fragment

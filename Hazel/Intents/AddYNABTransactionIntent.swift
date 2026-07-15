@@ -105,40 +105,14 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
             // "Always" forces an equal split even if a share happens to be
             // set; only "Manual" actually uses the entered share.
             let ownShare = (splitwiseOption == .manual) ? splitwiseOwnShare : nil
-            do {
-                let splitOutcome = try await SplitwiseExpenseHelper.addExpense(
-                    amount: amount,
-                    description: description,
-                    friend: friend,
-                    ownShare: ownShare
-                )
-                switch splitOutcome {
-                case .created(let shareSummary):
-                    return ", split with Splitwise — \(shareSummary)"
-                case .queued:
-                    return ". Splitwise is offline — the split will sync automatically"
-                }
-            } catch {
-                let message = (error as? SplitwiseIntentError)?.localizedStringResource
-                    ?? "Couldn't add the Splitwise expense."
-                return ". \(String(localized: message))"
-            }
+            return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare)
         }
 
         async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payee)")
         async let splitDialogFragment = createSplitIfNeeded()
 
         let outcome = try await ynabOutcome
-        var dialog: String
-        switch outcome {
-        case .created:
-            if let categoryId = category?.id {
-                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
-            }
-            dialog = "Added \(formattedAmount) at \(payee)"
-        case .queued:
-            dialog = "You're offline — queued \(formattedAmount) at \(payee) to add to YNAB once you're back online"
-        }
+        var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: payee, categoryId: category?.id)
 
         if let fragment = await splitDialogFragment {
             dialog += fragment
