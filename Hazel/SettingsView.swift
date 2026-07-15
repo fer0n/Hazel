@@ -247,7 +247,12 @@ struct SettingsView: View {
         templateExportResultMessage = nil
         templateExportErrorMessage = nil
         let config = WalletTransactionConfigStore.load()
-        guard let data = try? JSONEncoder().encode(config) else {
+        let encoder = JSONEncoder()
+        // Human-readable and byte-stable across exports of unchanged data —
+        // this is a backup file a user might open/diff by hand, not a wire
+        // format, so there's no cost to spending the extra whitespace.
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(config) else {
             templateExportErrorMessage = "Failed to export: couldn't encode templates."
             return
         }
