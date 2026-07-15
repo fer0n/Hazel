@@ -25,7 +25,6 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Con
 struct ContinueSplitwiseWalletTransactionView: View {
     let draft: TransactionDraft
 
-    @State private var isLoading = true
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
     @State private var resultMessage: String?
@@ -52,6 +51,34 @@ struct ContinueSplitwiseWalletTransactionView: View {
     @State private var splitwiseRuntimeChoice: SplitwiseSplitOption?
     @State private var ownShareText = ""
 
+    init(draft: TransactionDraft) {
+        self.draft = draft
+
+        // Resolved synchronously so the form is ready on the very first
+        // render. `currentAccessToken` is a plain Keychain read here (no
+        // network), unlike YNAB's token check, so even the auth gate can
+        // be settled up front instead of behind a `.task`.
+        guard case .splitwiseWallet(let merchant, _) = draft.payload else { return }
+
+        guard SplitwiseAuthService.currentAccessToken != nil else {
+            _notAuthenticated = State(initialValue: true)
+            return
+        }
+
+        let config = SplitwiseWalletTransactionConfigStore.load()
+        if let info = config.resolvedMerchantInfo(for: merchant) {
+            _templateResolved = State(initialValue: true)
+            _expenseDescription = State(initialValue: info.expenseDescription)
+            let template = config.templates[info.templateName]
+            _resolvedFriendId = State(initialValue: template?.friendId ?? 0)
+            _resolvedFriendFirstName = State(initialValue: template?.friendFirstName ?? "")
+            _resolvedFriendFullName = State(initialValue: template?.friendFullName ?? "")
+            _resolvedTemplateSplitOption = State(initialValue: template?.splitOption ?? .never)
+        } else {
+            _expenseDescription = State(initialValue: merchant)
+        }
+    }
+
     private var effectiveSplitOption: SplitwiseTemplateOption {
         templateResolved ? resolvedTemplateSplitOption : newTemplateSplitOption
     }
@@ -72,9 +99,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
 
     var body: some View {
         Group {
-            if isLoading {
-                ProgressView()
-            } else if notAuthenticated {
+            if notAuthenticated {
                 ContentUnavailableView(
                     "Not Connected",
                     systemImage: "exclamationmark.triangle",
@@ -183,29 +208,8 @@ struct ContinueSplitwiseWalletTransactionView: View {
     }
 
     private func load() async {
-        guard case .splitwiseWallet(let merchant, _) = draft.payload else { return }
-
-        guard SplitwiseAuthService.currentAccessToken != nil else {
-            notAuthenticated = true
-            isLoading = false
-            return
-        }
-
-        let config = SplitwiseWalletTransactionConfigStore.load()
-        if let info = config.resolvedMerchantInfo(for: merchant) {
-            templateResolved = true
-            expenseDescription = info.expenseDescription
-            let template = config.templates[info.templateName]
-            resolvedFriendId = template?.friendId ?? 0
-            resolvedFriendFirstName = template?.friendFirstName ?? ""
-            resolvedFriendFullName = template?.friendFullName ?? ""
-            resolvedTemplateSplitOption = template?.splitOption ?? .never
-        } else {
-            expenseDescription = merchant
-        }
-
+        guard !notAuthenticated else { return }
         await loadFriends()
-        isLoading = false
     }
 
     private func loadFriends() async {

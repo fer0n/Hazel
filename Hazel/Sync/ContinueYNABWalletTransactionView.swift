@@ -24,7 +24,6 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Con
 struct ContinueYNABWalletTransactionView: View {
     let draft: TransactionDraft
 
-    @State private var isLoading = true
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
     @State private var resultMessage: String?
@@ -58,6 +57,31 @@ struct ContinueYNABWalletTransactionView: View {
 
     init(draft: TransactionDraft) {
         self.draft = draft
+
+        // Resolved synchronously (local disk reads only) so the form's
+        // payee/category/account defaults are in place on the very first
+        // render — no need to wait on a `.task` for this part.
+        guard case .ynabWallet(let merchant, _, let card) = draft.payload else { return }
+
+        let config = WalletTransactionConfigStore.load()
+        if let info = config.resolvedMerchantInfo(for: merchant) {
+            _templateResolved = State(initialValue: true)
+            _payeeName = State(initialValue: info.payeeName)
+            let template = config.templates[info.templateName]
+            _selectedCategoryId = State(initialValue: template?.categoryId)
+            _resolvedTemplateSplitwiseOption = State(initialValue: template?.splitwiseOption ?? .never)
+        } else {
+            _payeeName = State(initialValue: merchant)
+        }
+
+        if let accountId = config.cards[card] {
+            _accountResolved = State(initialValue: true)
+            _selectedAccountId = State(initialValue: accountId)
+        }
+
+        if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+            _selectedFriendId = State(initialValue: defaultFriend.id)
+        }
     }
 
     private var effectiveSplitwiseOption: SplitwiseTemplateOption {
@@ -79,9 +103,7 @@ struct ContinueYNABWalletTransactionView: View {
 
     var body: some View {
         Group {
-            if isLoading {
-                ProgressView()
-            } else if notAuthenticated {
+            if notAuthenticated {
                 ContentUnavailableView(
                     "Not Connected",
                     systemImage: "exclamationmark.triangle",
@@ -224,40 +246,22 @@ struct ContinueYNABWalletTransactionView: View {
     }
 
     private func load() async {
-        guard case .ynabWallet(let merchant, _, let card) = draft.payload else { return }
+        guard case .ynabWallet = draft.payload else { return }
 
+        // The form (with its locally-resolved defaults from init) is
+        // already on screen at this point. This only needs to check auth
+        // and kick off the category/account/friend refreshes — each
+        // section owns its own spinner, so nothing here should block the
+        // rest of the form from being usable.
         guard let token = await YNABAuthService.validAccessToken() else {
             notAuthenticated = true
-            isLoading = false
             return
-        }
-
-        let config = WalletTransactionConfigStore.load()
-        if let info = config.resolvedMerchantInfo(for: merchant) {
-            templateResolved = true
-            payeeName = info.payeeName
-            let template = config.templates[info.templateName]
-            selectedCategoryId = template?.categoryId
-            resolvedTemplateSplitwiseOption = template?.splitwiseOption ?? .never
-        } else {
-            payeeName = merchant
-        }
-
-        if let accountId = config.cards[card] {
-            accountResolved = true
-            selectedAccountId = accountId
-        }
-
-        if let defaultFriend = SplitwiseDefaultFriendStore.load() {
-            selectedFriendId = defaultFriend.id
         }
 
         async let categoriesTask: Void = loadCategoriesIfNeeded(token: token)
         async let accountsTask: Void = loadAccountsIfNeeded(token: token)
         async let friendsTask: Void = loadFriends()
         _ = await (categoriesTask, accountsTask, friendsTask)
-
-        isLoading = false
     }
 
     private func loadCategoriesIfNeeded(token: String) async {
