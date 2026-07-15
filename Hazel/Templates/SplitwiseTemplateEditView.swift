@@ -85,7 +85,7 @@ struct SplitwiseTemplateEditView: View {
 
             Section("Splitwise") {
                 Picker("Split Option", selection: $splitOption) {
-                    ForEach([SplitwiseTemplateOption.always, .manual, .ask, .never], id: \.self) { option in
+                    ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
                         Text(option.label).tag(option)
                     }
                 }

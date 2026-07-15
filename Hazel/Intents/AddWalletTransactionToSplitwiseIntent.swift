@@ -196,13 +196,8 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     resolvedSplitOption = splitOptionOverride
                 } else {
                     logger.log("template=\(templateName, privacy: .public) — requesting split option")
-                    // .manual is deliberately left out here, matching
-                    // AddWalletTransactionToYNABIntent's convention — Ask/
-                    // Split Equally/Don't Split cover template setup; a
-                    // template already saved as .manual still works, just
-                    // isn't offered as a fresh choice.
                     resolvedSplitOption = try await $splitOptionOverride.requestDisambiguation(
-                        among: [.ask, .always, .never],
+                        among: [.ask, .always, .manual, .never],
                         dialog: "Split \(templateName) expenses with Splitwise?"
                     )
                 }
