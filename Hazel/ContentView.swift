@@ -4,11 +4,13 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct ContentView: View {
     @State private var ynabAuth = YNABAuthService()
     @State private var splitwiseAuth = SplitwiseAuthService()
     @State private var pendingQueue = PendingOperationQueue.shared
+    @State private var draftCount = TransactionDraftStore.load().count
     @State private var didDeleteWalletConfig = false
     @Environment(\.scenePhase) private var scenePhase
 
@@ -93,6 +95,30 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
+                NavigationLink {
+                    TransactionDraftsView()
+                } label: {
+                    HStack {
+                        Text("Transaction Drafts")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if draftCount > 0 {
+                            Text("\(draftCount)")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(.orange, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
 
                 Button("Delete Wallet Transaction Config") {
@@ -125,7 +151,14 @@ struct ContentView: View {
                 ynabAuth.refreshFromKeychain()
                 splitwiseAuth.refreshFromKeychain()
                 Task { await pendingQueue.flush() }
+                draftCount = TransactionDraftStore.load().count
             }
+        }
+        // Needed so TransactionDraftGuard's "Ensure Completion" reminders
+        // can actually be delivered — requesting more than once is a no-op
+        // once the user has already answered the system prompt.
+        .task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
         }
     }
 }

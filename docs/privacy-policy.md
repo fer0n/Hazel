@@ -49,15 +49,23 @@ to extract transaction data for import into YNAB.
   next time the app is opened or a Shortcut runs. This "Pending Queue" is
   visible in the app, and never leaves the device or is sent anywhere other
   than YNAB's or Splitwise's own APIs once it syncs.
+- The wallet automations' "Ensure Completion" option (on by default) briefly
+  stores a short summary (amount and merchant name) locally and requests
+  permission to send you a local notification if that run is interrupted
+  before finishing — since there's no way for Hazel to resume a Shortcuts
+  run that was cut off partway through. That notification is generated and
+  delivered entirely on-device; nothing about it is sent anywhere. The
+  summary is visible in the app's "Transaction Drafts" screen and is deleted
+  as soon as the transaction completes (or you dismiss it there yourself).
 
 ## Retention
 
 Tokens remain in the device Keychain until you disconnect an account in
 Hazel or delete the app, at which point they are removed. Hazel does not
 retain transaction or budget data outside of what YNAB and Splitwise
-themselves store, other than the Pending Queue above, which is deleted as
-soon as each item successfully syncs (or you remove it from the queue
-yourself).
+themselves store, other than the Pending Queue and Transaction Drafts
+above, each of which is deleted as soon as it's resolved (synced,
+completed, or removed by you).
 
 ## Deleting your data
 
