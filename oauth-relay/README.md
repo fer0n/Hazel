@@ -42,9 +42,9 @@ it there if you ever change the domain.
 
 ### Setting the secrets
 
-Client secrets no longer live in the app's source at all (see
-`Hazel/Secrets.swift`) — the authoritative place to view or rotate them is
-each provider's own OAuth app dashboard:
+Client secrets no longer live in the app's source at all — the
+authoritative place to view or rotate them is each provider's own OAuth
+app dashboard:
 
 - YNAB: https://app.ynab.com/settings/developer → your OAuth application
 - Splitwise: https://secure.splitwise.com/apps → your app

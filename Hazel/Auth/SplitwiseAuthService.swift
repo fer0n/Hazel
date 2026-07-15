@@ -56,7 +56,7 @@ final class SplitwiseAuthService {
     func signIn() {
         var components = URLComponents(string: "https://secure.splitwise.com/oauth/authorize")!
         components.queryItems = [
-            URLQueryItem(name: "client_id", value: Secrets.splitwiseClientID),
+            URLQueryItem(name: "client_id", value: OAuthConfig.splitwiseClientID),
             URLQueryItem(name: "redirect_uri", value: OAuthConfig.splitwiseRedirectURI),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "state", value: UUID().uuidString),

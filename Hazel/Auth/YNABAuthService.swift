@@ -98,7 +98,7 @@ final class YNABAuthService {
 
         var components = URLComponents(string: "https://app.ynab.com/oauth/authorize")!
         components.queryItems = [
-            URLQueryItem(name: "client_id", value: Secrets.ynabClientID),
+            URLQueryItem(name: "client_id", value: OAuthConfig.ynabClientID),
             URLQueryItem(name: "redirect_uri", value: OAuthConfig.ynabRedirectURI),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "code_challenge", value: Self.codeChallenge(for: codeVerifier)),
