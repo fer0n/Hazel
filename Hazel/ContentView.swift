@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var ynabAuth = YNABAuthService()
     @State private var splitwiseAuth = SplitwiseAuthService()
+    @State private var pendingQueue = PendingOperationQueue.shared
     @State private var didDeleteWalletConfig = false
     @Environment(\.scenePhase) private var scenePhase
 
@@ -68,6 +69,30 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
+                NavigationLink {
+                    PendingQueueView()
+                } label: {
+                    HStack {
+                        Text("Pending Queue")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if !pendingQueue.operations.isEmpty {
+                            Text("\(pendingQueue.operations.count)")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(.orange, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
                 Spacer()
 
                 Button("Delete Wallet Transaction Config") {
@@ -99,6 +124,7 @@ struct ContentView: View {
             if newPhase == .active {
                 ynabAuth.refreshFromKeychain()
                 splitwiseAuth.refreshFromKeychain()
+                Task { await pendingQueue.flush() }
             }
         }
     }

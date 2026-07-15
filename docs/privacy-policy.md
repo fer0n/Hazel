@@ -43,13 +43,21 @@ to extract transaction data for import into YNAB.
 - Imported statement files are read locally on-device to build transactions
   for YNAB; Hazel does not upload or retain copies of these files beyond
   what's needed to complete the import.
+- If a transaction or expense can't be sent because the device is offline,
+  Hazel stores it in local on-device storage (amount, payee/description,
+  category, and which friend it's split with) and retries automatically the
+  next time the app is opened or a Shortcut runs. This "Pending Queue" is
+  visible in the app, and never leaves the device or is sent anywhere other
+  than YNAB's or Splitwise's own APIs once it syncs.
 
 ## Retention
 
 Tokens remain in the device Keychain until you disconnect an account in
 Hazel or delete the app, at which point they are removed. Hazel does not
 retain transaction or budget data outside of what YNAB and Splitwise
-themselves store.
+themselves store, other than the Pending Queue above, which is deleted as
+soon as each item successfully syncs (or you remove it from the queue
+yourself).
 
 ## Deleting your data
 
