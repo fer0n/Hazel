@@ -1,0 +1,445 @@
+//
+//  ContinueYNABWalletTransactionView.swift
+//  Hazel
+//
+//  In-app equivalent of AddWalletTransactionToYNABIntent.perform(), reached
+//  by tapping a "Continue Adding Transaction" notification (or a draft row
+//  in TransactionDraftsView) after that Shortcuts run got interrupted
+//  before finishing. Reads/writes the exact same WalletTransactionConfigStore
+//  and calls the same PendingSync/SplitwiseExpenseHelper the intent does —
+//  the only thing that differs is asking the remaining questions via a
+//  SwiftUI form instead of requestValue/requestDisambiguation.
+//
+//  Unlike the intent, this doesn't replicate auto-match patterns or
+//  multi-merchant template linking — creating a template here just links
+//  this one merchant, using the payee name as the template name. Anything
+//  fancier can still be set up afterwards in Templates.
+//
+
+import SwiftUI
+import os
+
+private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "ContinueYNABWalletTransactionView")
+
+extension SplitwiseSplitOption {
+    /// Plain-text label for Hazel's own SwiftUI screens — mirrors
+    /// SplitwiseTemplateOption.label in TemplatesView.swift.
+    var label: String {
+        switch self {
+        case .always: "Split Equally"
+        case .manual: "Split Manually"
+        case .never: "Don't Split"
+        }
+    }
+}
+
+struct ContinueYNABWalletTransactionView: View {
+    let draft: TransactionDraft
+
+    @State private var isLoading = true
+    @State private var notAuthenticated = false
+    @State private var errorMessage: String?
+    @State private var resultMessage: String?
+    @State private var isSubmitting = false
+
+    /// True once a merchant→template match is found — payee/category/split
+    /// setting are then fixed (read-only here) instead of asked again.
+    @State private var templateResolved = false
+    @State private var payeeName = ""
+    @State private var categories: [YNABCategory] = []
+    @State private var selectedCategoryId: String?
+    @State private var isLoadingCategories = false
+
+    @State private var accountResolved = false
+    @State private var accounts: [YNABAccount] = []
+    @State private var selectedAccountId: String?
+    @State private var isLoadingAccounts = false
+
+    /// Only used/shown when `!templateResolved` — the split setting to save
+    /// on the new template.
+    @State private var newTemplateSplitwiseOption: SplitwiseTemplateOption = .never
+    /// Only meaningful when `templateResolved` — the existing template's
+    /// fixed split setting, shown read-only.
+    @State private var resolvedTemplateSplitwiseOption: SplitwiseTemplateOption = .never
+
+    @State private var splitwiseRuntimeChoice: SplitwiseSplitOption?
+    @State private var friends: [SplitwiseFriend] = []
+    @State private var selectedFriendId: Int?
+    @State private var isLoadingFriends = false
+    @State private var ownShareText = ""
+
+    init(draft: TransactionDraft) {
+        self.draft = draft
+    }
+
+    private var effectiveSplitwiseOption: SplitwiseTemplateOption {
+        templateResolved ? resolvedTemplateSplitwiseOption : newTemplateSplitwiseOption
+    }
+
+    private var resolvedSplitwiseAction: SplitwiseSplitOption {
+        switch effectiveSplitwiseOption {
+        case .never: .never
+        case .always: .always
+        case .manual: .manual
+        case .ask: splitwiseRuntimeChoice ?? .never
+        }
+    }
+
+    private var canSubmit: Bool {
+        if !templateResolved, payeeName.trimmingCharacters(in: .whitespaces).isEmpty { return false }
+        if selectedAccountId == nil { return false }
+        if effectiveSplitwiseOption == .ask, splitwiseRuntimeChoice == nil { return false }
+        if resolvedSplitwiseAction != .never, selectedFriendId == nil { return false }
+        if resolvedSplitwiseAction == .manual, Double(ownShareText) == nil { return false }
+        return true
+    }
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView()
+            } else if notAuthenticated {
+                ContentUnavailableView(
+                    "Not Connected",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("Connect your YNAB account in Hazel first.")
+                )
+            } else if let resultMessage {
+                ContentUnavailableView(
+                    "Done",
+                    systemImage: "checkmark.circle",
+                    description: Text(resultMessage)
+                )
+            } else {
+                form
+            }
+        }
+        .navigationTitle("Continue Transaction")
+        .task { await load() }
+    }
+
+    private var form: some View {
+        Form {
+            Section {
+                Text(draft.summary).font(.headline)
+            }
+
+            if templateResolved {
+                Section("Resolved From Template") {
+                    LabeledContent("Payee", value: payeeName)
+                    LabeledContent("Category", value: categories.first { $0.id == selectedCategoryId }?.name ?? "None")
+                }
+            } else {
+                Section("Payee") {
+                    TextField("Payee Name", text: $payeeName)
+                }
+                Section("Category") {
+                    if isLoadingCategories {
+                        ProgressView()
+                    } else {
+                        Picker("Category", selection: $selectedCategoryId) {
+                            Text("None").tag(String?.none)
+                            ForEach(categories, id: \.id) { category in
+                                Text(category.name).tag(Optional(category.id))
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section("Account") {
+                if accountResolved {
+                    LabeledContent("Account", value: accounts.first { $0.id == selectedAccountId }?.name ?? "Unknown")
+                } else if isLoadingAccounts {
+                    ProgressView()
+                } else {
+                    Picker("Account", selection: $selectedAccountId) {
+                        Text("None").tag(String?.none)
+                        ForEach(accounts, id: \.id) { account in
+                            Text(account.name).tag(Optional(account.id))
+                        }
+                    }
+                }
+            }
+
+            Section("Splitwise") {
+                if templateResolved {
+                    LabeledContent("Split Setting", value: resolvedTemplateSplitwiseOption.label)
+                } else {
+                    Picker("Split With Splitwise", selection: $newTemplateSplitwiseOption) {
+                        ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                }
+
+                if effectiveSplitwiseOption == .ask {
+                    Picker("Split This Transaction?", selection: $splitwiseRuntimeChoice) {
+                        Text("Choose").tag(SplitwiseSplitOption?.none)
+                        ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
+                            Text(option.label).tag(SplitwiseSplitOption?.some(option))
+                        }
+                    }
+                }
+
+                if resolvedSplitwiseAction != .never {
+                    if isLoadingFriends {
+                        ProgressView()
+                    } else {
+                        Picker("Split With", selection: $selectedFriendId) {
+                            Text("None").tag(Int?.none)
+                            ForEach(friends, id: \.id) { friend in
+                                Text(friend.fullName).tag(Optional(friend.id))
+                            }
+                        }
+                    }
+                }
+
+                if resolvedSplitwiseAction == .manual {
+                    TextField("Your Share", text: $ownShareText)
+                        .keyboardType(.decimalPad)
+                }
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage).foregroundStyle(.red)
+                }
+            }
+
+            Section {
+                Button {
+                    Task { await submit() }
+                } label: {
+                    if isSubmitting {
+                        ProgressView()
+                    } else {
+                        Text("Add Transaction")
+                    }
+                }
+                .disabled(!canSubmit || isSubmitting)
+            }
+        }
+    }
+
+    private func load() async {
+        guard case .ynabWallet(let merchant, _, let card) = draft.payload else { return }
+
+        guard let token = await YNABAuthService.validAccessToken() else {
+            notAuthenticated = true
+            isLoading = false
+            return
+        }
+
+        let config = WalletTransactionConfigStore.load()
+        if let info = config.resolvedMerchantInfo(for: merchant) {
+            templateResolved = true
+            payeeName = info.payeeName
+            let template = config.templates[info.templateName]
+            selectedCategoryId = template?.categoryId
+            resolvedTemplateSplitwiseOption = template?.splitwiseOption ?? .never
+        } else {
+            payeeName = merchant
+        }
+
+        if let accountId = config.cards[card] {
+            accountResolved = true
+            selectedAccountId = accountId
+        }
+
+        if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+            selectedFriendId = defaultFriend.id
+        }
+
+        async let categoriesTask: Void = loadCategoriesIfNeeded(token: token)
+        async let accountsTask: Void = loadAccountsIfNeeded(token: token)
+        async let friendsTask: Void = loadFriends()
+        _ = await (categoriesTask, accountsTask, friendsTask)
+
+        isLoading = false
+    }
+
+    private func loadCategoriesIfNeeded(token: String) async {
+        guard !templateResolved else { return }
+        if let cached = YNABCategoryCacheStore.load() {
+            categories = YNABCategoryUsageStore.sorted(cached)
+        }
+        isLoadingCategories = categories.isEmpty
+        defer { isLoadingCategories = false }
+        do {
+            categories = YNABCategoryUsageStore.sorted(try await YNABCategoryCacheStore.fetch(token: token))
+        } catch {
+            logger.error("failed to load categories: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func loadAccountsIfNeeded(token: String) async {
+        guard !accountResolved else { return }
+        if let cached = YNABAccountCacheStore.load() {
+            accounts = cached
+        }
+        isLoadingAccounts = accounts.isEmpty
+        defer { isLoadingAccounts = false }
+        do {
+            accounts = try await YNABAccountCacheStore.fetch(token: token)
+        } catch {
+            logger.error("failed to load accounts: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func loadFriends() async {
+        guard let token = SplitwiseAuthService.currentAccessToken else { return }
+        if let cached = SplitwiseFriendCacheStore.load() {
+            friends = SplitwiseFriendUsageStore.sorted(cached)
+        }
+        isLoadingFriends = friends.isEmpty
+        defer { isLoadingFriends = false }
+        do {
+            friends = SplitwiseFriendUsageStore.sorted(try await SplitwiseFriendCacheStore.fetch(token: token))
+        } catch {
+            logger.error("failed to load friends: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func submit() async {
+        guard case .ynabWallet(let merchant, let amount, let card) = draft.payload else { return }
+        guard let token = await YNABAuthService.validAccessToken() else {
+            notAuthenticated = true
+            return
+        }
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+
+        var config = WalletTransactionConfigStore.load()
+        var configChanged = false
+        let finalPayeeName: String
+        let finalCategoryId: String?
+
+        if templateResolved {
+            finalPayeeName = payeeName
+            finalCategoryId = selectedCategoryId
+        } else {
+            let trimmed = payeeName.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else {
+                errorMessage = "Payee name can't be empty."
+                return
+            }
+            var template = config.templates[trimmed] ?? WalletTransactionConfig.Template(categoryId: nil)
+            template.categoryId = selectedCategoryId
+            template.splitwiseOption = newTemplateSplitwiseOption
+            config.templates[trimmed] = template
+            config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(payeeName: trimmed, templateName: trimmed)
+            finalPayeeName = trimmed
+            finalCategoryId = selectedCategoryId
+            configChanged = true
+        }
+
+        guard let accountId = selectedAccountId else {
+            errorMessage = "Pick an account."
+            return
+        }
+        if !accountResolved {
+            config.cards[card] = accountId
+            configChanged = true
+        }
+
+        if configChanged {
+            do {
+                try WalletTransactionConfigStore.save(config)
+            } catch {
+                logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+            }
+        }
+
+        let action = resolvedSplitwiseAction
+        var ownShare: Double?
+        if action == .manual {
+            guard let parsed = Double(ownShareText) else {
+                errorMessage = "Enter a valid share amount."
+                return
+            }
+            do {
+                try SplitwiseExpenseHelper.validateOwnShare(parsed, amount: amount)
+            } catch {
+                errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Invalid share amount."
+                return
+            }
+            ownShare = parsed
+        }
+
+        var friend: SplitwiseFriendEntity?
+        if action != .never {
+            guard let selectedFriendId, let match = friends.first(where: { $0.id == selectedFriendId }) else {
+                errorMessage = "Pick a Splitwise friend."
+                return
+            }
+            friend = SplitwiseFriendEntity(id: match.id, firstName: match.firstName, fullName: match.fullName)
+        }
+
+        let milliunits = -Int((amount * 1000).rounded())
+        let transaction = YNABTransactionRequest(
+            accountId: accountId,
+            date: YNABService.todayDateString(),
+            amount: milliunits,
+            payeeName: finalPayeeName,
+            categoryId: finalCategoryId,
+            memo: nil,
+            cleared: "uncleared",
+            approved: true
+        )
+        let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
+
+        async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(finalPayeeName)")
+        async let splitDialogFragment = createSplitIfNeeded(friend: friend, description: finalPayeeName, amount: amount, action: action, ownShare: ownShare)
+
+        do {
+            let outcome = try await ynabOutcome
+            var dialog: String
+            switch outcome {
+            case .created:
+                if let finalCategoryId {
+                    YNABCategoryUsageStore.recordUsage(categoryId: finalCategoryId)
+                }
+                dialog = "Added \(formattedAmount) at \(finalPayeeName)"
+            case .queued:
+                dialog = "You're offline — queued \(formattedAmount) at \(finalPayeeName) to add to YNAB once you're back online"
+            }
+            if let fragment = await splitDialogFragment {
+                dialog += fragment
+            }
+            TransactionDraftGuard.complete(draft.id)
+            resultMessage = dialog
+        } catch {
+            errorMessage = (error as? YNABIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the transaction."
+        }
+    }
+
+    private func createSplitIfNeeded(
+        friend: SplitwiseFriendEntity?,
+        description: String,
+        amount: Double,
+        action: SplitwiseSplitOption,
+        ownShare: Double?
+    ) async -> String? {
+        guard action != .never, let friend else { return nil }
+        do {
+            let outcome = try await SplitwiseExpenseHelper.addExpense(
+                amount: amount,
+                description: description,
+                friend: friend,
+                ownShare: (action == .manual) ? ownShare : nil
+            )
+            switch outcome {
+            case .created(let shareSummary):
+                return ", split with Splitwise — \(shareSummary)"
+            case .queued:
+                return ". Splitwise is offline — the split will sync automatically"
+            }
+        } catch {
+            let message = (error as? SplitwiseIntentError)?.localizedStringResource
+                ?? "Couldn't add the Splitwise expense."
+            return ". \(String(localized: message))"
+        }
+    }
+}

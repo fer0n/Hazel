@@ -10,12 +10,14 @@ struct ContentView: View {
     @State private var ynabAuth = YNABAuthService()
     @State private var splitwiseAuth = SplitwiseAuthService()
     @State private var pendingQueue = PendingOperationQueue.shared
+    @State private var draftRouter = DraftNotificationRouter.shared
     @State private var draftCount = TransactionDraftStore.load().count
     @State private var didDeleteWalletConfig = false
+    @State private var path: [ContentRoute] = []
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 16) {
                 Text("Hazel")
                     .font(.largeTitle.bold())
@@ -39,9 +41,7 @@ struct ContentView: View {
                     DefaultSplitwiseFriendRow()
                 }
 
-                NavigationLink {
-                    TemplatesView()
-                } label: {
+                NavigationLink(value: ContentRoute.templates) {
                     HStack {
                         Text("Templates")
                             .font(.headline)
@@ -55,9 +55,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                NavigationLink {
-                    HowHazelWorksView()
-                } label: {
+                NavigationLink(value: ContentRoute.howHazelWorks) {
                     HStack {
                         Text("How Hazel Works")
                             .font(.headline)
@@ -71,9 +69,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                NavigationLink {
-                    PendingQueueView()
-                } label: {
+                NavigationLink(value: ContentRoute.pendingQueue) {
                     HStack {
                         Text("Pending Queue")
                             .font(.headline)
@@ -95,9 +91,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
-                NavigationLink {
-                    TransactionDraftsView()
-                } label: {
+                NavigationLink(value: ContentRoute.transactionDrafts) {
                     HStack {
                         Text("Transaction Drafts")
                             .font(.headline)
@@ -142,6 +136,20 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
             }
             .padding()
+            .navigationDestination(for: ContentRoute.self) { route in
+                switch route {
+                case .templates:
+                    TemplatesView()
+                case .howHazelWorks:
+                    HowHazelWorksView()
+                case .pendingQueue:
+                    PendingQueueView()
+                case .transactionDrafts:
+                    TransactionDraftsView()
+                case .continueDraft(let draftId):
+                    ContinueDraftView(draftId: draftId)
+                }
+            }
         }
         // Picks up a token invalidated by an App Intent (e.g. an expired
         // YNAB token found while running a Shortcut) while this view's
@@ -159,6 +167,14 @@ struct ContentView: View {
         // once the user has already answered the system prompt.
         .task {
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+        }
+        // A tapped draft notification always jumps straight to that draft's
+        // continue flow, resetting whatever else was on the stack — it's a
+        // deliberate, deep-linked destination, not just "open the app".
+        .onChange(of: draftRouter.pendingDraftID) { _, newValue in
+            guard let newValue else { return }
+            path = [.continueDraft(newValue)]
+            draftRouter.pendingDraftID = nil
         }
     }
 }

@@ -3,10 +3,11 @@
 //  Hazel
 //
 //  Lists whatever TransactionDraftGuard still considers "started but not
-//  finished" — there's no way to resume a suspended App Intent perform()
-//  call, so this is purely a reminder/cleanup view: dismissing an entry
-//  here just clears the draft and cancels its notification, it doesn't
-//  re-run anything.
+//  finished". Tapping one pushes ContinueDraftView to actually finish it —
+//  the same flow a tapped notification opens — since there's no way to
+//  resume the original suspended App Intent perform() call; dismissing one
+//  instead just clears the draft and cancels its notification without
+//  finishing anything.
 //
 
 import SwiftUI
@@ -24,13 +25,15 @@ struct TransactionDraftsView: View {
                 )
             } else {
                 ForEach(drafts) { draft in
-                    TransactionDraftRow(draft: draft)
-                        .swipeActions {
-                            Button("Dismiss", role: .destructive) {
-                                TransactionDraftGuard.complete(draft.id)
-                                drafts.removeAll { $0.id == draft.id }
-                            }
+                    NavigationLink(value: ContentRoute.continueDraft(draft.id)) {
+                        TransactionDraftRow(draft: draft)
+                    }
+                    .swipeActions {
+                        Button("Dismiss", role: .destructive) {
+                            TransactionDraftGuard.complete(draft.id)
+                            drafts.removeAll { $0.id == draft.id }
                         }
+                    }
                 }
             }
         }
