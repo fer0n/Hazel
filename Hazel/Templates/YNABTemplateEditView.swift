@@ -14,6 +14,12 @@ import os
 
 private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "YNABTemplateEditView")
 
+private struct LinkedMerchant: Identifiable {
+    let merchant: String
+    let payeeName: String
+    var id: String { merchant }
+}
+
 struct YNABTemplateEditView: View {
     /// nil means "creating a new template".
     let templateName: String?
@@ -27,6 +33,7 @@ struct YNABTemplateEditView: View {
     @State private var selectedCategoryId: String?
     @State private var splitwiseOption: SplitwiseTemplateOption
     @State private var autoMatchRules: [WalletTransactionConfig.AutoMatchRule]
+    @State private var linkedMerchants: [LinkedMerchant]
     @State private var isLoadingCategories = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
@@ -35,11 +42,16 @@ struct YNABTemplateEditView: View {
         self.templateName = templateName
         self.onSave = onSave
         self.onDelete = onDelete
-        let existing = templateName.flatMap { WalletTransactionConfigStore.load().templates[$0] }
+        let config = WalletTransactionConfigStore.load()
+        let existing = templateName.flatMap { config.templates[$0] }
         _name = State(initialValue: templateName ?? "")
         _selectedCategoryId = State(initialValue: existing?.categoryId)
         _splitwiseOption = State(initialValue: existing?.splitwiseOption ?? .never)
         _autoMatchRules = State(initialValue: existing?.autoMatch ?? [])
+        _linkedMerchants = State(initialValue: config.merchants
+            .filter { $0.value.templateName == templateName }
+            .map { LinkedMerchant(merchant: $0.key, payeeName: $0.value.payeeName) }
+            .sorted { $0.merchant < $1.merchant })
     }
 
     var body: some View {
@@ -79,6 +91,24 @@ struct YNABTemplateEditView: View {
                 .onDelete { autoMatchRules.remove(atOffsets: $0) }
                 Button("Add Rule") {
                     autoMatchRules.append(.init(pattern: "", payeeName: ""))
+                }
+            }
+
+            if templateName != nil, !linkedMerchants.isEmpty {
+                Section {
+                    ForEach(linkedMerchants) { linked in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(linked.merchant)
+                            Text(linked.payeeName)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete { linkedMerchants.remove(atOffsets: $0) }
+                } header: {
+                    Text("Linked Merchants")
+                } footer: {
+                    Text("Wallet transactions from these exact merchant names go straight to this template. Swipe to unlink one.")
                 }
             }
 
@@ -144,10 +174,20 @@ struct YNABTemplateEditView: View {
             splitwiseOption: splitwiseOption
         )
 
-        if let templateName, templateName != trimmedName {
-            config.templates.removeValue(forKey: templateName)
+        if let templateName {
+            // Drop merchants unlinked in this session before any rename
+            // propagation below, so they aren't renamed back in.
+            let keptMerchants = Set(linkedMerchants.map(\.merchant))
             for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
-                config.merchants[key]?.templateName = trimmedName
+                if !keptMerchants.contains(key) {
+                    config.merchants.removeValue(forKey: key)
+                }
+            }
+            if templateName != trimmedName {
+                config.templates.removeValue(forKey: templateName)
+                for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
+                    config.merchants[key]?.templateName = trimmedName
+                }
             }
         }
         config.templates[trimmedName] = template

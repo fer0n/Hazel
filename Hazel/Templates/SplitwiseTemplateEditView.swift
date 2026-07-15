@@ -13,6 +13,12 @@ import os
 
 private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "SplitwiseTemplateEditView")
 
+private struct LinkedMerchant: Identifiable {
+    let merchant: String
+    let expenseDescription: String
+    var id: String { merchant }
+}
+
 struct SplitwiseTemplateEditView: View {
     /// nil means "creating a new template".
     let templateName: String?
@@ -26,6 +32,7 @@ struct SplitwiseTemplateEditView: View {
     @State private var selectedFriendId: Int?
     @State private var splitOption: SplitwiseTemplateOption
     @State private var autoMatchRules: [SplitwiseWalletTransactionConfig.AutoMatchRule]
+    @State private var linkedMerchants: [LinkedMerchant]
     @State private var isLoadingFriends = false
     @State private var errorMessage: String?
     @State private var showDeleteConfirmation = false
@@ -40,12 +47,17 @@ struct SplitwiseTemplateEditView: View {
         self.templateName = templateName
         self.onSave = onSave
         self.onDelete = onDelete
-        let existing = templateName.flatMap { SplitwiseWalletTransactionConfigStore.load().templates[$0] }
+        let config = SplitwiseWalletTransactionConfigStore.load()
+        let existing = templateName.flatMap { config.templates[$0] }
         existingFriend = existing.map { ($0.friendId, $0.friendFirstName, $0.friendFullName) }
         _name = State(initialValue: templateName ?? "")
         _selectedFriendId = State(initialValue: existing?.friendId)
         _splitOption = State(initialValue: existing?.splitOption ?? .never)
         _autoMatchRules = State(initialValue: existing?.autoMatch ?? [])
+        _linkedMerchants = State(initialValue: config.merchants
+            .filter { $0.value.templateName == templateName }
+            .map { LinkedMerchant(merchant: $0.key, expenseDescription: $0.value.expenseDescription) }
+            .sorted { $0.merchant < $1.merchant })
     }
 
     var body: some View {
@@ -85,6 +97,24 @@ struct SplitwiseTemplateEditView: View {
                 .onDelete { autoMatchRules.remove(atOffsets: $0) }
                 Button("Add Rule") {
                     autoMatchRules.append(.init(pattern: "", expenseDescription: ""))
+                }
+            }
+
+            if templateName != nil, !linkedMerchants.isEmpty {
+                Section {
+                    ForEach(linkedMerchants) { linked in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(linked.merchant)
+                            Text(linked.expenseDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete { linkedMerchants.remove(atOffsets: $0) }
+                } header: {
+                    Text("Linked Merchants")
+                } footer: {
+                    Text("Wallet transactions from these exact merchant names go straight to this template. Swipe to unlink one.")
                 }
             }
 
@@ -162,10 +192,20 @@ struct SplitwiseTemplateEditView: View {
             autoMatch: cleanedRules
         )
 
-        if let templateName, templateName != trimmedName {
-            config.templates.removeValue(forKey: templateName)
+        if let templateName {
+            // Drop merchants unlinked in this session before any rename
+            // propagation below, so they aren't renamed back in.
+            let keptMerchants = Set(linkedMerchants.map(\.merchant))
             for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
-                config.merchants[key]?.templateName = trimmedName
+                if !keptMerchants.contains(key) {
+                    config.merchants.removeValue(forKey: key)
+                }
+            }
+            if templateName != trimmedName {
+                config.templates.removeValue(forKey: templateName)
+                for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
+                    config.merchants[key]?.templateName = trimmedName
+                }
             }
         }
         config.templates[trimmedName] = template
