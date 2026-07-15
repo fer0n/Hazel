@@ -85,8 +85,8 @@ enum TransactionDraftGuard {
 
     private static func scheduleNotification(for draft: TransactionDraft) {
         let content = UNMutableNotificationContent()
-        content.title = "Continue Adding Transaction"
-        content.body = "\(draft.summary) — still needs to be added to \(draft.service.displayName). Tap to finish."
+        content.title = "Transaction Incomplete"
+        content.body = "\(draft.summary). Tap to continue."
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: fireDelay, repeats: false)
