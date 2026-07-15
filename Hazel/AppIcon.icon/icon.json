@@ -4,72 +4,28 @@
   },
   "groups" : [
     {
-      "hidden" : false,
       "layers" : [
         {
-          "fill-specializations" : [
-            {
-              "value" : {
-                "solid" : "display-p3:0.89745,1.00000,0.87160,1.00000"
-              }
-            },
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "display-p3:0.89745,1.00000,0.87160,1.00000"
-              }
-            }
-          ],
-          "image-name" : "Inner.svg",
-          "name" : "Inner"
-        }
-      ],
-      "lighting" : "individual",
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.4
-      },
-      "specular" : false,
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.2
-      }
-    },
-    {
-      "blur-material" : null,
-      "layers" : [
-        {
-          "fill-specializations" : [
-            {
-              "value" : {
-                "linear-gradient" : [
-                  "srgb:0.38824,0.72549,0.07059,1.00000",
-                  "display-p3:0.37546,0.57685,0.18477,1.00000"
-                ],
-                "orientation" : {
-                  "start" : {
-                    "x" : 0.5,
-                    "y" : 0
-                  },
-                  "stop" : {
-                    "x" : 0.5,
-                    "y" : 0.7
-                  }
-                }
-              }
-            },
-            {
-              "appearance" : "dark",
-              "value" : {
-                "solid" : "display-p3:0.37546,0.57685,0.18477,1.00000"
+          "fill" : {
+            "linear-gradient" : [
+              "display-p3:0.33333,0.71765,0.94118,1.00000",
+              "srgb:0.33725,0.86667,0.94510,1.00000"
+            ],
+            "orientation" : {
+              "start" : {
+                "x" : 0.5000000000000002,
+                "y" : 0
+              },
+              "stop" : {
+                "x" : 0.5000000000000002,
+                "y" : 1
               }
             }
-          ],
-          "image-name" : "Outer.svg",
-          "name" : "Outer"
+          },
+          "image-name" : "icon 2.svg",
+          "name" : "icon"
         }
       ],
-      "lighting" : "individual",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
@@ -77,7 +33,7 @@
       "specular" : true,
       "translucency" : {
         "enabled" : true,
-        "value" : 0.1
+        "value" : 0.2
       }
     }
   ],
