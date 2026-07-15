@@ -96,6 +96,10 @@ final class SplitwiseAuthService {
             if let refreshToken = token.refreshToken {
                 KeychainStore.save(refreshToken, for: Self.refreshTokenKey)
             }
+            // Warms the friend cache right away, so a fresh sign-in doesn't
+            // need a first online visit to a template editor before
+            // offline template creation works.
+            Task { _ = try? await SplitwiseFriendCacheStore.fetch(token: token.accessToken) }
         } catch {
             print("Splitwise token exchange failed: \(error)")
         }

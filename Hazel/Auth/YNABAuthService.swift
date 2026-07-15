@@ -134,6 +134,13 @@ final class YNABAuthService {
             Self.save(token)
             accessToken = token.accessToken
             logger.log("YNAB sign-in succeeded")
+            // Warms the category/account caches right away, so a fresh
+            // sign-in doesn't need a first online visit to a template
+            // editor before offline template creation works.
+            Task {
+                _ = try? await YNABCategoryCacheStore.fetch(token: token.accessToken)
+                _ = try? await YNABAccountCacheStore.fetch(token: token.accessToken)
+            }
         } catch {
             logger.error("token exchange failed: \(String(describing: error), privacy: .public)")
         }
