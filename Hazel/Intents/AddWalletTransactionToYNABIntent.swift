@@ -241,6 +241,10 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 let resolvedSplitwiseOption: SplitwiseTemplateOption
                 if let existingTemplate {
                     resolvedSplitwiseOption = existingTemplate.splitwiseOption
+                } else if SplitwiseAuthService.currentAccessToken == nil {
+                    // Don't ask a YNAB-only user to configure a Splitwise
+                    // setting for their new template.
+                    resolvedSplitwiseOption = .never
                 } else {
                     if let splitwiseOptionOverride {
                         resolvedSplitwiseOption = splitwiseOptionOverride
@@ -294,8 +298,14 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 changed = true
             }
 
+            // A template can carry a non-.never splitwiseOption from before
+            // Splitwise was disconnected — treat as "never split" for this
+            // run rather than asking for a friend/share that can only ever
+            // fail against a disconnected Splitwise account.
+            let effectiveSplitwiseOption = SplitwiseAuthService.currentAccessToken != nil ? splitwiseOption : .never
+
             let splitwiseAction: SplitwiseSplitOption
-            switch splitwiseOption {
+            switch effectiveSplitwiseOption {
             case .never:
                 splitwiseAction = .never
             case .always:

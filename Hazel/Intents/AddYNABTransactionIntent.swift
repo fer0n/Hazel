@@ -65,18 +65,26 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
             throw YNABIntentError.notAuthenticated
         }
 
+        // AppIntents requires parameterSummary to be a static, compile-time
+        // value — it can't be hidden dynamically when Splitwise isn't
+        // connected, so a YNAB-only user can still set splitwiseOption in
+        // the Shortcuts editor. Treat it as "never split" at run time
+        // instead, rather than prompting for a friend/share that can only
+        // ever fail.
+        let effectiveSplitwiseOption = SplitwiseAuthService.currentAccessToken != nil ? splitwiseOption : .never
+
         // Resolve all needed values before the YNAB API call below: throwing
         // requestValue re-runs perform() from the top, which would otherwise
         // create a second, duplicate YNAB transaction.
-        if splitwiseOption != .never, splitwiseFriend == nil {
+        if effectiveSplitwiseOption != .never, splitwiseFriend == nil {
             throw $splitwiseFriend.requestValue("Split with which Splitwise friend?")
         }
-        if splitwiseOption == .manual, splitwiseOwnShare == nil {
+        if effectiveSplitwiseOption == .manual, splitwiseOwnShare == nil {
             let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
             let friendName = splitwiseFriend?.firstName ?? "your friend"
             throw $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(payee), split with \(friendName)?")
         }
-        if splitwiseOption == .manual, let splitwiseOwnShare {
+        if effectiveSplitwiseOption == .manual, let splitwiseOwnShare {
             try SplitwiseExpenseHelper.validateOwnShare(splitwiseOwnShare, amount: amount)
         }
 
@@ -99,12 +107,12 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
         // Catches its own errors (never throws) so a Splitwise failure never
         // cancels the still-in-flight YNAB call.
         func createSplitIfNeeded() async -> String? {
-            guard splitwiseOption != .never, let friend = splitwiseFriend else { return nil }
+            guard effectiveSplitwiseOption != .never, let friend = splitwiseFriend else { return nil }
             // Mirrors the original shortcut's description: "payee (memo)" when a memo is set.
             let description = (memo?.isEmpty == false) ? "\(payee) (\(memo!))" : payee
             // "Always" forces an equal split even if a share happens to be
             // set; only "Manual" actually uses the entered share.
-            let ownShare = (splitwiseOption == .manual) ? splitwiseOwnShare : nil
+            let ownShare = (effectiveSplitwiseOption == .manual) ? splitwiseOwnShare : nil
             return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare)
         }
 
