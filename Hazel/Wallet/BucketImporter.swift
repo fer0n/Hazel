@@ -2,10 +2,14 @@
 //  BucketImporter.swift
 //  Hazel
 //
-//  Translates a decoded BucketImportFile into WalletTransactionConfig.
-//  Buckets map onto templates and merchants map onto merchants directly;
-//  each bucket's category name is resolved against the caller's YNAB
-//  category list since the config store keys categories by id, not name.
+//  Merges externally-sourced template data into WalletTransactionConfig.
+//  `merge(_:into:categories:)` translates a decoded BucketImportFile (the
+//  legacy "YNAB Toolkit" Shortcut's DataJar export) — buckets map onto
+//  templates and merchants map onto merchants, with each bucket's category
+//  name resolved against the caller's YNAB category list since the config
+//  store keys categories by id, not name. `mergeNative(_:into:)` instead
+//  merges Hazel's own full-fidelity export format, which needs no
+//  translation since it's already in the store's own shape.
 //
 
 import Foundation
@@ -49,6 +53,34 @@ enum BucketImporter {
             importedMerchantCount: file.merchants.count,
             unresolvedCategoryNames: Array(Set(unresolvedCategoryNames)).sorted(),
             skippedCardCount: file.cards.count
+        )
+    }
+
+    struct NativeMergeResult {
+        var importedTemplateCount: Int
+        var importedMerchantCount: Int
+        var importedCardCount: Int
+    }
+
+    /// Merges a full WalletTransactionConfig export (Hazel's own native
+    /// format, produced by Settings' "Export Templates") directly — unlike
+    /// `merge(_:into:categories:)`, there's no category-name resolution or
+    /// field translation needed since it's already in the store's own
+    /// shape, id for id.
+    static func mergeNative(_ export: WalletTransactionConfig, into config: inout WalletTransactionConfig) -> NativeMergeResult {
+        for (name, template) in export.templates {
+            config.templates[name] = template
+        }
+        for (merchant, info) in export.merchants {
+            config.merchants[merchant] = info
+        }
+        for (card, accountId) in export.cards {
+            config.cards[card] = accountId
+        }
+        return NativeMergeResult(
+            importedTemplateCount: export.templates.count,
+            importedMerchantCount: export.merchants.count,
+            importedCardCount: export.cards.count
         )
     }
 }

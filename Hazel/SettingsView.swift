@@ -19,6 +19,10 @@ struct SettingsView: View {
     @State private var isImportingBuckets = false
     @State private var bucketImportResultMessage: String?
     @State private var bucketImportErrorMessage: String?
+    @State private var showTemplateExporter = false
+    @State private var templateExportDocument: JSONFileDocument?
+    @State private var templateExportResultMessage: String?
+    @State private var templateExportErrorMessage: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -86,7 +90,27 @@ struct SettingsView: View {
                             .foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("Imports buckets, auto-match rules, and merchants from an exported JSON file into your templates — the same shape the \"YNAB Toolkit\" Shortcut's DataJar config used.")
+                    Text("Imports a JSON file exported from here, or the legacy shape the \"YNAB Toolkit\" Shortcut's DataJar config used.")
+                        .footerText()
+                }
+                .cardRowBackground()
+
+                Section {
+                    Button("Export Templates") {
+                        exportTemplates()
+                    }
+                    if let templateExportResultMessage {
+                        Text(templateExportResultMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let templateExportErrorMessage {
+                        Text(templateExportErrorMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                } footer: {
+                    Text("Saves your templates, auto-match rules, merchants, and cards as a JSON file — a full backup you can re-import here later, including into a different device.")
                         .footerText()
                 }
                 .cardRowBackground()
@@ -131,6 +155,21 @@ struct SettingsView: View {
                     Task { await importBuckets(from: url) }
                 }
             }
+            .fileExporter(
+                isPresented: $showTemplateExporter,
+                document: templateExportDocument,
+                contentType: .json,
+                defaultFilename: "Hazel Templates"
+            ) { result in
+                switch result {
+                case .success:
+                    templateExportErrorMessage = nil
+                    templateExportResultMessage = "Exported."
+                case .failure(let error):
+                    templateExportResultMessage = nil
+                    templateExportErrorMessage = "Failed to export: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -154,6 +193,21 @@ struct SettingsView: View {
 
         do {
             let data = try Data(contentsOf: url)
+
+            // Tries Hazel's own export shape first (a full WalletTransactionConfig
+            // — no field translation needed), and only falls back to the legacy
+            // bucket shape if that fails to decode. The two are structurally
+            // distinct (different field names on `merchants`), so this never
+            // misidentifies one as the other.
+            if let nativeConfig = try? JSONDecoder().decode(WalletTransactionConfig.self, from: data) {
+                var config = WalletTransactionConfigStore.load()
+                let result = BucketImporter.mergeNative(nativeConfig, into: &config)
+                try WalletTransactionConfigStore.save(config)
+                logger.log("imported native export: \(result.importedTemplateCount, privacy: .public) templates, \(result.importedMerchantCount, privacy: .public) merchants")
+                bucketImportResultMessage = summary(for: result)
+                return
+            }
+
             let file = try JSONDecoder().decode(BucketImportFile.self, from: data)
 
             var categories = YNABCategoryCacheStore.load() ?? []
@@ -183,6 +237,43 @@ struct SettingsView: View {
             message += " Skipped \(result.skippedCardCount) card mapping\(result.skippedCardCount == 1 ? "" : "s") — cards are linked automatically the first time you use them."
         }
         return message
+    }
+
+    private func summary(for result: BucketImporter.NativeMergeResult) -> String {
+        "Imported \(result.importedTemplateCount) template\(result.importedTemplateCount == 1 ? "" : "s"), \(result.importedMerchantCount) merchant\(result.importedMerchantCount == 1 ? "" : "s"), and \(result.importedCardCount) card\(result.importedCardCount == 1 ? "" : "s")."
+    }
+
+    private func exportTemplates() {
+        templateExportResultMessage = nil
+        templateExportErrorMessage = nil
+        let config = WalletTransactionConfigStore.load()
+        guard let data = try? JSONEncoder().encode(config) else {
+            templateExportErrorMessage = "Failed to export: couldn't encode templates."
+            return
+        }
+        templateExportDocument = JSONFileDocument(data: data)
+        showTemplateExporter = true
+    }
+}
+
+/// Minimal FileDocument wrapper so `.fileExporter` can save arbitrary JSON
+/// `Data` — Hazel never reads a document back through this type, only
+/// writes, since import goes through `.fileImporter` + JSONDecoder instead.
+private struct JSONFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    var data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
     }
 }
 
