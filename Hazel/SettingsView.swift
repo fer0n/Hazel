@@ -13,7 +13,6 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Set
 struct SettingsView: View {
     @State private var ynabAuth = YNABAuthService()
     @State private var splitwiseAuth = SplitwiseAuthService()
-    @State private var didDeleteWalletConfig = false
     @State private var notificationsEnabled = NotificationsPreferenceStore.isEnabled
     @State private var showBucketFileImporter = false
     @State private var isImportingBuckets = false
@@ -65,13 +64,6 @@ struct SettingsView: View {
                 .cardRowBackground()
 
                 Section {
-                    NavigationLink(value: SettingsRoute.howHazelWorks) {
-                        RowLabel(title: "How Hazel Works")
-                    }
-                }
-                .cardRowBackground()
-
-                Section {
                     Button("Import Templates") {
                         showBucketFileImporter = true
                     }
@@ -114,26 +106,12 @@ struct SettingsView: View {
                         .footerText()
                 }
                 .cardRowBackground()
-
+                
+                
                 Section {
-                    Button("Delete Wallet Transaction Config", role: .destructive) {
-                        try? WalletTransactionConfigStore.delete()
-                        didDeleteWalletConfig = true
+                    NavigationLink(value: SettingsRoute.howHazelWorks) {
+                        RowLabel(title: "How Hazel Works")
                     }
-                    .foregroundStyle(.red)
-                    if didDeleteWalletConfig {
-                        Text("Deleted")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                } footer: {
-                    // Required by YNAB's API Terms of Service (see CLAUDE.md) —
-                    // must be visible somewhere in the app, not just the privacy
-                    // policy.
-                    Text("Hazel is not affiliated, associated, or in any way officially connected with YNAB or any of its subsidiaries or affiliates.")
-                        .footerText()
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
                 }
                 .cardRowBackground()
             }
