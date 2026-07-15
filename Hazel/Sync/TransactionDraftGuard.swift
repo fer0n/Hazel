@@ -8,9 +8,12 @@
 //  again (called after every follow-up question is answered, so a normal
 //  but slow-to-answer run — typing a new template name, picking a category —
 //  doesn't get a premature nudge while the user is still actively working
-//  through it); complete() cancels the notification and clears the draft
-//  once the transaction actually finishes (created, queued, or a deliberate
-//  "don't split").
+//  through it); fail() fires the notification right away instead of
+//  waiting out that window, for the case where perform() is still alive to
+//  catch its own error (a real API/validation failure) and already knows
+//  for certain the run won't finish; complete() cancels the notification
+//  and clears the draft once the transaction actually finishes (created,
+//  queued, or a deliberate "don't split").
 //
 //  There's no way to resume a suspended App Intent perform() call — if a
 //  follow-up question gets dismissed or the process is killed outright
@@ -66,6 +69,17 @@ enum TransactionDraftGuard {
         scheduleNotification(for: draft)
     }
 
+    /// Fires the reminder right away — call when perform() is about to
+    /// throw. A real error (or a dismissed follow-up question that unwinds
+    /// perform() while it's still alive to run this) means the run has
+    /// already definitively ended without creating/queuing anything, so
+    /// there's no reason to make the user wait out the usual quiet-period
+    /// window before finding out.
+    static func fail(_ id: UUID) {
+        guard let draft = TransactionDraftStore.load().first(where: { $0.id == id }) else { return }
+        scheduleNotification(for: draft, delay: 1)
+    }
+
     static func complete(_ id: UUID) {
         var drafts = TransactionDraftStore.load()
         drafts.removeAll { $0.id == id }
@@ -83,13 +97,13 @@ enum TransactionDraftGuard {
         center.removeDeliveredNotifications(withIdentifiers: [id.uuidString])
     }
 
-    private static func scheduleNotification(for draft: TransactionDraft) {
+    private static func scheduleNotification(for draft: TransactionDraft, delay: TimeInterval = fireDelay) {
         let content = UNMutableNotificationContent()
         content.title = "Transaction Incomplete"
         content.body = "\(draft.summary). Tap to continue."
         content.sound = .default
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: fireDelay, repeats: false)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
         let request = UNNotificationRequest(identifier: draft.id.uuidString, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {

@@ -136,271 +136,281 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             }
         }
 
-        await PendingOperationQueue.shared.flush()
+        do {
+            await PendingOperationQueue.shared.flush()
 
-        guard let token = await YNABAuthService.validAccessToken() else {
-            logger.error("no YNAB access token in Keychain — not authenticated")
-            throw YNABIntentError.notAuthenticated
-        }
-        logger.log("YNAB token present (len=\(token.count, privacy: .public))")
+            guard let token = await YNABAuthService.validAccessToken() else {
+                logger.error("no YNAB access token in Keychain — not authenticated")
+                throw YNABIntentError.notAuthenticated
+            }
+            logger.log("YNAB token present (len=\(token.count, privacy: .public))")
 
-        var config = WalletTransactionConfigStore.load()
-        var changed = false
+            var config = WalletTransactionConfigStore.load()
+            var changed = false
 
-        // Uses the async `requestValue` API (suspend perform() in place, await
-        // the answer, resume) rather than the deprecated throwing form that
-        // re-runs perform() from the top. In-place resolution is why these
-        // parameters don't need to appear in `parameterSummary` (the throwing
-        // form only binds collected values back for summary parameters, so a
-        // hidden parameter would hang), and it also removes the duplicate-
-        // transaction risk of a restart since perform() now runs exactly once.
-        let payeeName: String
-        let categoryId: String?
-        let splitwiseOption: SplitwiseTemplateOption
+            // Uses the async `requestValue` API (suspend perform() in place, await
+            // the answer, resume) rather than the deprecated throwing form that
+            // re-runs perform() from the top. In-place resolution is why these
+            // parameters don't need to appear in `parameterSummary` (the throwing
+            // form only binds collected values back for summary parameters, so a
+            // hidden parameter would hang), and it also removes the duplicate-
+            // transaction risk of a restart since perform() now runs exactly once.
+            let payeeName: String
+            let categoryId: String?
+            let splitwiseOption: SplitwiseTemplateOption
 
-        if let info = config.resolvedMerchantInfo(for: merchant) {
-            logger.log("merchant resolved to payee=\(info.payeeName, privacy: .public) template=\(info.templateName, privacy: .public)")
-            if config.merchants[merchant] == nil {
-                config.merchants[merchant] = info
+            if let info = config.resolvedMerchantInfo(for: merchant) {
+                logger.log("merchant resolved to payee=\(info.payeeName, privacy: .public) template=\(info.templateName, privacy: .public)")
+                if config.merchants[merchant] == nil {
+                    config.merchants[merchant] = info
+                    changed = true
+                }
+                payeeName = info.payeeName
+                categoryId = config.templates[info.templateName]?.categoryId
+                splitwiseOption = config.templates[info.templateName]?.splitwiseOption ?? .never
+            } else {
+                let resolvedTemplateChoice: String
+                if let templateChoice {
+                    resolvedTemplateChoice = templateChoice
+                } else {
+                    logger.log("no merchant match — requesting template choice")
+                    resolvedTemplateChoice = try await $templateChoice.requestValue("Which template for \"\(merchant)\"?")
+                    touchDraft()
+                }
+
+                let templateName: String
+                let existingTemplate: WalletTransactionConfig.Template?
+                if resolvedTemplateChoice != createNewTemplateOption, let existing = config.templates[resolvedTemplateChoice] {
+                    templateName = resolvedTemplateChoice
+                    existingTemplate = existing
+                } else {
+                    let newName: String
+                    if let newTemplateName {
+                        newName = newTemplateName
+                    } else {
+                        logger.log("creating new template — requesting template name")
+                        newName = try await $newTemplateName.requestValue("Template name?")
+                        touchDraft()
+                    }
+                    templateName = newName
+                    existingTemplate = config.templates[newName]
+                }
+
+                let resolvedPayeeName: String
+                if let payeeOverride {
+                    resolvedPayeeName = payeeOverride
+                } else {
+                    logger.log("template=\(templateName, privacy: .public) — requesting payee name")
+                    resolvedPayeeName = try await $payeeOverride.requestValue("Payee name for \"\(merchant)\"?")
+                    touchDraft()
+                }
+
+                let pattern: String
+                if let autoMatchPattern {
+                    pattern = autoMatchPattern
+                } else {
+                    logger.log("payeeName=\(resolvedPayeeName, privacy: .public) — requesting auto-match pattern")
+                    pattern = try await $autoMatchPattern.requestValue(
+                        "Match other merchant names to \(resolvedPayeeName) too? Enter text/regex, or leave blank to skip."
+                    )
+                    touchDraft()
+                }
+                logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
+
+                let resolvedCategoryId: String?
+                if let existingTemplate {
+                    resolvedCategoryId = existingTemplate.categoryId
+                } else {
+                    let category: YNABCategoryEntity
+                    if let categoryOverride {
+                        category = categoryOverride
+                    } else {
+                        logger.log("payeeName=\(resolvedPayeeName, privacy: .public) — requesting category")
+                        // requestDisambiguation (not requestValue) so this param
+                        // can stay out of parameterSummary — see the note there.
+                        let categories = try await YNABCategoryEntity.defaultQuery.suggestedEntities()
+                        category = try await $categoryOverride.requestDisambiguation(
+                            among: categories,
+                            dialog: "Category for \(templateName)?"
+                        )
+                        touchDraft()
+                    }
+                    resolvedCategoryId = category.id
+                }
+
+                let resolvedSplitwiseOption: SplitwiseTemplateOption
+                if let existingTemplate {
+                    resolvedSplitwiseOption = existingTemplate.splitwiseOption
+                } else {
+                    if let splitwiseOptionOverride {
+                        resolvedSplitwiseOption = splitwiseOptionOverride
+                    } else {
+                        logger.log("categoryId=\(resolvedCategoryId ?? "nil", privacy: .public) — requesting Splitwise option")
+                        resolvedSplitwiseOption = try await $splitwiseOptionOverride.requestDisambiguation(
+                            among: [.ask, .always, .manual, .never],
+                            dialog: "Split \(templateName) expenses with Splitwise?"
+                        )
+                        touchDraft()
+                    }
+                }
+
+                var template = existingTemplate ?? WalletTransactionConfig.Template(
+                    categoryId: resolvedCategoryId,
+                    splitwiseOption: resolvedSplitwiseOption
+                )
+                if !pattern.isEmpty {
+                    template.autoMatch.append(.init(pattern: pattern, payeeName: resolvedPayeeName))
+                }
+                config.templates[templateName] = template
+                config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(payeeName: resolvedPayeeName, templateName: templateName)
+                payeeName = resolvedPayeeName
+                categoryId = resolvedCategoryId
+                splitwiseOption = resolvedSplitwiseOption
                 changed = true
             }
-            payeeName = info.payeeName
-            categoryId = config.templates[info.templateName]?.categoryId
-            splitwiseOption = config.templates[info.templateName]?.splitwiseOption ?? .never
-        } else {
-            let resolvedTemplateChoice: String
-            if let templateChoice {
-                resolvedTemplateChoice = templateChoice
-            } else {
-                logger.log("no merchant match — requesting template choice")
-                resolvedTemplateChoice = try await $templateChoice.requestValue("Which template for \"\(merchant)\"?")
-                touchDraft()
-            }
 
-            let templateName: String
-            let existingTemplate: WalletTransactionConfig.Template?
-            if resolvedTemplateChoice != createNewTemplateOption, let existing = config.templates[resolvedTemplateChoice] {
-                templateName = resolvedTemplateChoice
-                existingTemplate = existing
+            let accountId: String
+            if let existingAccountId = config.cards[card] {
+                logger.log("card matched existing accountId=\(existingAccountId, privacy: .public)")
+                accountId = existingAccountId
             } else {
-                let newName: String
-                if let newTemplateName {
-                    newName = newTemplateName
+                let account: YNABAccountEntity
+                if let accountOverride {
+                    account = accountOverride
                 } else {
-                    logger.log("creating new template — requesting template name")
-                    newName = try await $newTemplateName.requestValue("Template name?")
-                    touchDraft()
-                }
-                templateName = newName
-                existingTemplate = config.templates[newName]
-            }
-
-            let resolvedPayeeName: String
-            if let payeeOverride {
-                resolvedPayeeName = payeeOverride
-            } else {
-                logger.log("template=\(templateName, privacy: .public) — requesting payee name")
-                resolvedPayeeName = try await $payeeOverride.requestValue("Payee name for \"\(merchant)\"?")
-                touchDraft()
-            }
-
-            let pattern: String
-            if let autoMatchPattern {
-                pattern = autoMatchPattern
-            } else {
-                logger.log("payeeName=\(resolvedPayeeName, privacy: .public) — requesting auto-match pattern")
-                pattern = try await $autoMatchPattern.requestValue(
-                    "Match other merchant names to \(resolvedPayeeName) too? Enter text/regex, or leave blank to skip."
-                )
-                touchDraft()
-            }
-            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
-
-            let resolvedCategoryId: String?
-            if let existingTemplate {
-                resolvedCategoryId = existingTemplate.categoryId
-            } else {
-                let category: YNABCategoryEntity
-                if let categoryOverride {
-                    category = categoryOverride
-                } else {
-                    logger.log("payeeName=\(resolvedPayeeName, privacy: .public) — requesting category")
-                    // requestDisambiguation (not requestValue) so this param
-                    // can stay out of parameterSummary — see the note there.
-                    let categories = try await YNABCategoryEntity.defaultQuery.suggestedEntities()
-                    category = try await $categoryOverride.requestDisambiguation(
-                        among: categories,
-                        dialog: "Category for \(templateName)?"
+                    logger.log("no account match for card — requesting account")
+                    // requestDisambiguation (not requestValue) so this param can
+                    // stay out of parameterSummary — see the note there.
+                    let accounts = try await YNABAccountEntity.defaultQuery.suggestedEntities()
+                    account = try await $accountOverride.requestDisambiguation(
+                        among: accounts,
+                        dialog: "YNAB account for card \"\(card)\"?"
                     )
                     touchDraft()
                 }
-                resolvedCategoryId = category.id
+                logger.log("accountId=\(account.id, privacy: .public)")
+                config.cards[card] = account.id
+                accountId = account.id
+                changed = true
             }
 
-            let resolvedSplitwiseOption: SplitwiseTemplateOption
-            if let existingTemplate {
-                resolvedSplitwiseOption = existingTemplate.splitwiseOption
-            } else {
-                if let splitwiseOptionOverride {
-                    resolvedSplitwiseOption = splitwiseOptionOverride
-                } else {
-                    logger.log("categoryId=\(resolvedCategoryId ?? "nil", privacy: .public) — requesting Splitwise option")
-                    resolvedSplitwiseOption = try await $splitwiseOptionOverride.requestDisambiguation(
-                        among: [.ask, .always, .manual, .never],
-                        dialog: "Split \(templateName) expenses with Splitwise?"
-                    )
-                    touchDraft()
-                }
-            }
-
-            var template = existingTemplate ?? WalletTransactionConfig.Template(
-                categoryId: resolvedCategoryId,
-                splitwiseOption: resolvedSplitwiseOption
-            )
-            if !pattern.isEmpty {
-                template.autoMatch.append(.init(pattern: pattern, payeeName: resolvedPayeeName))
-            }
-            config.templates[templateName] = template
-            config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(payeeName: resolvedPayeeName, templateName: templateName)
-            payeeName = resolvedPayeeName
-            categoryId = resolvedCategoryId
-            splitwiseOption = resolvedSplitwiseOption
-            changed = true
-        }
-
-        let accountId: String
-        if let existingAccountId = config.cards[card] {
-            logger.log("card matched existing accountId=\(existingAccountId, privacy: .public)")
-            accountId = existingAccountId
-        } else {
-            let account: YNABAccountEntity
-            if let accountOverride {
-                account = accountOverride
-            } else {
-                logger.log("no account match for card — requesting account")
-                // requestDisambiguation (not requestValue) so this param can
-                // stay out of parameterSummary — see the note there.
-                let accounts = try await YNABAccountEntity.defaultQuery.suggestedEntities()
-                account = try await $accountOverride.requestDisambiguation(
-                    among: accounts,
-                    dialog: "YNAB account for card \"\(card)\"?"
-                )
-                touchDraft()
-            }
-            logger.log("accountId=\(account.id, privacy: .public)")
-            config.cards[card] = account.id
-            accountId = account.id
-            changed = true
-        }
-
-        let splitwiseAction: SplitwiseSplitOption
-        switch splitwiseOption {
-        case .never:
-            splitwiseAction = .never
-        case .always:
-            splitwiseAction = .always
-        case .manual:
-            splitwiseAction = .manual
-        case .ask:
-            if let splitwiseRuntimeChoice {
-                splitwiseAction = splitwiseRuntimeChoice
-            } else {
-                logger.log("splitwiseOption=ask — requesting runtime choice")
-                splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(payeeName) transaction with Splitwise?")
-                touchDraft()
-            }
-        }
-
-        // splitwiseFriend is a manual per-automation override; when unset,
-        // splitwiseFriendFallback decides whether to silently use the
-        // app-configured default (ContentView's DefaultSplitwiseFriendRow)
-        // or prompt live, so it's opt-in rather than nagging every run.
-        var resolvedFriend: SplitwiseFriendEntity? = splitwiseFriend
-        if splitwiseAction != .never, resolvedFriend == nil {
-            switch splitwiseFriendFallback {
-            case .defaultFriend:
-                if let defaultFriend = SplitwiseDefaultFriendStore.load() {
-                    logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — using default Splitwise friend")
-                    resolvedFriend = SplitwiseFriendEntity(id: defaultFriend.id, firstName: defaultFriend.firstName, fullName: defaultFriend.fullName)
-                }
+            let splitwiseAction: SplitwiseSplitOption
+            switch splitwiseOption {
+            case .never:
+                splitwiseAction = .never
+            case .always:
+                splitwiseAction = .always
+            case .manual:
+                splitwiseAction = .manual
             case .ask:
-                logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — requesting Splitwise friend")
-                let friends = try await SplitwiseFriendEntity.defaultQuery.suggestedEntities()
-                resolvedFriend = try await $splitwiseFriend.requestDisambiguation(
-                    among: friends,
-                    dialog: "Split with which Splitwise friend?"
-                )
+                if let splitwiseRuntimeChoice {
+                    splitwiseAction = splitwiseRuntimeChoice
+                } else {
+                    logger.log("splitwiseOption=ask — requesting runtime choice")
+                    splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(payeeName) transaction with Splitwise?")
+                    touchDraft()
+                }
+            }
+
+            // splitwiseFriend is a manual per-automation override; when unset,
+            // splitwiseFriendFallback decides whether to silently use the
+            // app-configured default (ContentView's DefaultSplitwiseFriendRow)
+            // or prompt live, so it's opt-in rather than nagging every run.
+            var resolvedFriend: SplitwiseFriendEntity? = splitwiseFriend
+            if splitwiseAction != .never, resolvedFriend == nil {
+                switch splitwiseFriendFallback {
+                case .defaultFriend:
+                    if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+                        logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — using default Splitwise friend")
+                        resolvedFriend = SplitwiseFriendEntity(id: defaultFriend.id, firstName: defaultFriend.firstName, fullName: defaultFriend.fullName)
+                    }
+                case .ask:
+                    logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) — requesting Splitwise friend")
+                    let friends = try await SplitwiseFriendEntity.defaultQuery.suggestedEntities()
+                    resolvedFriend = try await $splitwiseFriend.requestDisambiguation(
+                        among: friends,
+                        dialog: "Split with which Splitwise friend?"
+                    )
+                    touchDraft()
+                }
+            }
+            var resolvedOwnShare: Double? = splitwiseOwnShare
+            if splitwiseAction == .manual, resolvedOwnShare == nil {
+                logger.log("splitwiseAction=manual — requesting own share")
+                let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
+                let friendName = resolvedFriend?.firstName ?? "your friend"
+                resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(payeeName), split with \(friendName)?")
                 touchDraft()
             }
-        }
-        var resolvedOwnShare: Double? = splitwiseOwnShare
-        if splitwiseAction == .manual, resolvedOwnShare == nil {
-            logger.log("splitwiseAction=manual — requesting own share")
+            if splitwiseAction == .manual, let resolvedOwnShare {
+                try SplitwiseExpenseHelper.validateOwnShare(resolvedOwnShare, amount: amount)
+            }
+
+            if changed {
+                do {
+                    try WalletTransactionConfigStore.save(config)
+                    logger.log("config saved")
+                } catch {
+                    logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+                }
+            }
+
+            // Expenses are outflows in YNAB: stored as negative milliunits.
+            let milliunits = -Int((amount * 1000).rounded())
+            let transaction = YNABTransactionRequest(
+                accountId: accountId,
+                date: YNABService.todayDateString(),
+                amount: milliunits,
+                payeeName: payeeName,
+                categoryId: categoryId,
+                memo: nil,
+                cleared: "uncleared",
+                approved: true
+            )
+            logger.log("creating YNAB transaction: accountId=\(accountId, privacy: .public) amountMilliunits=\(milliunits, privacy: .public) payee=\(payeeName, privacy: .public) categoryId=\(categoryId ?? "nil", privacy: .public)")
             let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
-            let friendName = resolvedFriend?.firstName ?? "your friend"
-            resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(payeeName), split with \(friendName)?")
-            touchDraft()
-        }
-        if splitwiseAction == .manual, let resolvedOwnShare {
-            try SplitwiseExpenseHelper.validateOwnShare(resolvedOwnShare, amount: amount)
-        }
 
-        if changed {
-            do {
-                try WalletTransactionConfigStore.save(config)
-                logger.log("config saved")
-            } catch {
-                logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+            // Never depends on the YNAB call's outcome, so it runs concurrently
+            // with it instead of paying for both round-trips back to back.
+            // Catches its own errors (never throws) so a Splitwise failure never
+            // cancels the still-in-flight YNAB call.
+            func createSplitIfNeeded() async -> String? {
+                guard splitwiseAction != .never else { return nil }
+                guard let friend = resolvedFriend else {
+                    logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) but no friend available — skipping split")
+                    return ". No default Splitwise friend set — pick one in Hazel, or set \"Split With\" for this automation."
+                }
+                let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
+                let fragment = await WalletAutomationDialog.splitDialogFragment(amount: amount, description: payeeName, friend: friend, ownShare: ownShare)
+                logger.log("Splitwise split result: \(fragment, privacy: .public)")
+                return fragment
             }
-        }
 
-        // Expenses are outflows in YNAB: stored as negative milliunits.
-        let milliunits = -Int((amount * 1000).rounded())
-        let transaction = YNABTransactionRequest(
-            accountId: accountId,
-            date: YNABService.todayDateString(),
-            amount: milliunits,
-            payeeName: payeeName,
-            categoryId: categoryId,
-            memo: nil,
-            cleared: "uncleared",
-            approved: true
-        )
-        logger.log("creating YNAB transaction: accountId=\(accountId, privacy: .public) amountMilliunits=\(milliunits, privacy: .public) payee=\(payeeName, privacy: .public) categoryId=\(categoryId ?? "nil", privacy: .public)")
-        let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
+            async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payeeName)")
+            async let splitDialogFragment = createSplitIfNeeded()
 
-        // Never depends on the YNAB call's outcome, so it runs concurrently
-        // with it instead of paying for both round-trips back to back.
-        // Catches its own errors (never throws) so a Splitwise failure never
-        // cancels the still-in-flight YNAB call.
-        func createSplitIfNeeded() async -> String? {
-            guard splitwiseAction != .never else { return nil }
-            guard let friend = resolvedFriend else {
-                logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) but no friend available — skipping split")
-                return ". No default Splitwise friend set — pick one in Hazel, or set \"Split With\" for this automation."
+            let outcome = try await ynabOutcome
+            var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: payeeName, categoryId: categoryId)
+            logger.log("YNAB result: \(dialog, privacy: .public)")
+
+            if let fragment = await splitDialogFragment {
+                dialog += fragment
             }
-            let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
-            let fragment = await WalletAutomationDialog.splitDialogFragment(amount: amount, description: payeeName, friend: friend, ownShare: ownShare)
-            logger.log("Splitwise split result: \(fragment, privacy: .public)")
-            return fragment
+
+            if let draftId {
+                TransactionDraftGuard.complete(draftId)
+            }
+
+            logger.log("perform() done")
+            return .result(dialog: "\(dialog)")
+        } catch {
+            // The run is ending without a created/queued transaction —
+            // no reason to wait out the usual quiet-period window once
+            // that's certain, so nudge the user right away instead.
+            if let draftId {
+                TransactionDraftGuard.fail(draftId)
+            }
+            throw error
         }
-
-        async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payeeName)")
-        async let splitDialogFragment = createSplitIfNeeded()
-
-        let outcome = try await ynabOutcome
-        var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: payeeName, categoryId: categoryId)
-        logger.log("YNAB result: \(dialog, privacy: .public)")
-
-        if let fragment = await splitDialogFragment {
-            dialog += fragment
-        }
-
-        if let draftId {
-            TransactionDraftGuard.complete(draftId)
-        }
-
-        logger.log("perform() done")
-        return .result(dialog: "\(dialog)")
     }
 }

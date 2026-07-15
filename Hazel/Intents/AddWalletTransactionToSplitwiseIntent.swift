@@ -114,213 +114,223 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             }
         }
 
-        await PendingOperationQueue.shared.flush()
+        do {
+            await PendingOperationQueue.shared.flush()
 
-        guard SplitwiseAuthService.currentAccessToken != nil else {
-            logger.error("no Splitwise access token in Keychain — not authenticated")
-            throw SplitwiseIntentError.notAuthenticated
-        }
+            guard SplitwiseAuthService.currentAccessToken != nil else {
+                logger.error("no Splitwise access token in Keychain — not authenticated")
+                throw SplitwiseIntentError.notAuthenticated
+            }
 
-        var config = SplitwiseWalletTransactionConfigStore.load()
-        var changed = false
+            var config = SplitwiseWalletTransactionConfigStore.load()
+            var changed = false
 
-        let expenseDescription: String
-        let friendId: Int
-        let friendFirstName: String
-        let friendFullName: String
-        let splitOption: SplitwiseTemplateOption
+            let expenseDescription: String
+            let friendId: Int
+            let friendFirstName: String
+            let friendFullName: String
+            let splitOption: SplitwiseTemplateOption
 
-        if let info = config.resolvedMerchantInfo(for: merchant) {
-            logger.log("merchant resolved to description=\(info.expenseDescription, privacy: .public) template=\(info.templateName, privacy: .public)")
-            if config.merchants[merchant] == nil {
-                config.merchants[merchant] = info
+            if let info = config.resolvedMerchantInfo(for: merchant) {
+                logger.log("merchant resolved to description=\(info.expenseDescription, privacy: .public) template=\(info.templateName, privacy: .public)")
+                if config.merchants[merchant] == nil {
+                    config.merchants[merchant] = info
+                    changed = true
+                }
+                expenseDescription = info.expenseDescription
+                let template = config.templates[info.templateName]
+                friendId = template?.friendId ?? 0
+                friendFirstName = template?.friendFirstName ?? ""
+                friendFullName = template?.friendFullName ?? ""
+                splitOption = template?.splitOption ?? .never
+            } else {
+                let resolvedTemplateChoice: String
+                if let templateChoice {
+                    resolvedTemplateChoice = templateChoice
+                } else {
+                    logger.log("no merchant match — requesting template choice")
+                    resolvedTemplateChoice = try await $templateChoice.requestValue("Which template for \"\(merchant)\"?")
+                    touchDraft()
+                }
+
+                let templateName: String
+                let existingTemplate: SplitwiseWalletTransactionConfig.Template?
+                if resolvedTemplateChoice != createNewTemplateOption, let existing = config.templates[resolvedTemplateChoice] {
+                    templateName = resolvedTemplateChoice
+                    existingTemplate = existing
+                } else {
+                    let newName: String
+                    if let newTemplateName {
+                        newName = newTemplateName
+                    } else {
+                        logger.log("creating new template — requesting template name")
+                        newName = try await $newTemplateName.requestValue("Template name?")
+                        touchDraft()
+                    }
+                    templateName = newName
+                    existingTemplate = config.templates[newName]
+                }
+
+                let resolvedDescription: String
+                if let descriptionOverride {
+                    resolvedDescription = descriptionOverride
+                } else {
+                    logger.log("template=\(templateName, privacy: .public) — requesting description")
+                    resolvedDescription = try await $descriptionOverride.requestValue("Description for \"\(merchant)\"?")
+                    touchDraft()
+                }
+
+                let pattern: String
+                if let autoMatchPattern {
+                    pattern = autoMatchPattern
+                } else {
+                    logger.log("description=\(resolvedDescription, privacy: .public) — requesting auto-match pattern")
+                    pattern = try await $autoMatchPattern.requestValue(
+                        "Match other merchant names to \(resolvedDescription) too? Enter text/regex, or leave blank to skip."
+                    )
+                    touchDraft()
+                }
+                logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
+
+                let resolvedFriendId: Int
+                let resolvedFriendFirstName: String
+                let resolvedFriendFullName: String
+                if let existingTemplate {
+                    resolvedFriendId = existingTemplate.friendId
+                    resolvedFriendFirstName = existingTemplate.friendFirstName
+                    resolvedFriendFullName = existingTemplate.friendFullName
+                } else {
+                    let friend: SplitwiseFriendEntity
+                    if let friendOverride {
+                        friend = friendOverride
+                    } else {
+                        logger.log("template=\(templateName, privacy: .public) — requesting Splitwise friend")
+                        let friends = try await SplitwiseFriendEntity.defaultQuery.suggestedEntities()
+                        friend = try await $friendOverride.requestDisambiguation(
+                            among: friends,
+                            dialog: "Split \(templateName) expenses with which friend?"
+                        )
+                        touchDraft()
+                    }
+                    resolvedFriendId = friend.id
+                    resolvedFriendFirstName = friend.firstName
+                    resolvedFriendFullName = friend.fullName
+                }
+
+                let resolvedSplitOption: SplitwiseTemplateOption
+                if let existingTemplate {
+                    resolvedSplitOption = existingTemplate.splitOption
+                } else {
+                    if let splitOptionOverride {
+                        resolvedSplitOption = splitOptionOverride
+                    } else {
+                        logger.log("template=\(templateName, privacy: .public) — requesting split option")
+                        resolvedSplitOption = try await $splitOptionOverride.requestDisambiguation(
+                            among: [.ask, .always, .manual, .never],
+                            dialog: "Split \(templateName) expenses with Splitwise?"
+                        )
+                        touchDraft()
+                    }
+                }
+
+                var template = existingTemplate ?? SplitwiseWalletTransactionConfig.Template(
+                    friendId: resolvedFriendId,
+                    friendFirstName: resolvedFriendFirstName,
+                    friendFullName: resolvedFriendFullName,
+                    splitOption: resolvedSplitOption
+                )
+                if !pattern.isEmpty {
+                    template.autoMatch.append(.init(pattern: pattern, expenseDescription: resolvedDescription))
+                }
+                config.templates[templateName] = template
+                config.merchants[merchant] = SplitwiseWalletTransactionConfig.MerchantInfo(
+                    expenseDescription: resolvedDescription,
+                    templateName: templateName
+                )
+                expenseDescription = resolvedDescription
+                friendId = resolvedFriendId
+                friendFirstName = resolvedFriendFirstName
+                friendFullName = resolvedFriendFullName
+                splitOption = resolvedSplitOption
                 changed = true
             }
-            expenseDescription = info.expenseDescription
-            let template = config.templates[info.templateName]
-            friendId = template?.friendId ?? 0
-            friendFirstName = template?.friendFirstName ?? ""
-            friendFullName = template?.friendFullName ?? ""
-            splitOption = template?.splitOption ?? .never
-        } else {
-            let resolvedTemplateChoice: String
-            if let templateChoice {
-                resolvedTemplateChoice = templateChoice
-            } else {
-                logger.log("no merchant match — requesting template choice")
-                resolvedTemplateChoice = try await $templateChoice.requestValue("Which template for \"\(merchant)\"?")
-                touchDraft()
-            }
 
-            let templateName: String
-            let existingTemplate: SplitwiseWalletTransactionConfig.Template?
-            if resolvedTemplateChoice != createNewTemplateOption, let existing = config.templates[resolvedTemplateChoice] {
-                templateName = resolvedTemplateChoice
-                existingTemplate = existing
-            } else {
-                let newName: String
-                if let newTemplateName {
-                    newName = newTemplateName
+            let splitwiseAction: SplitwiseSplitOption
+            switch splitOption {
+            case .never:
+                splitwiseAction = .never
+            case .always:
+                splitwiseAction = .always
+            case .manual:
+                splitwiseAction = .manual
+            case .ask:
+                if let splitwiseRuntimeChoice {
+                    splitwiseAction = splitwiseRuntimeChoice
                 } else {
-                    logger.log("creating new template — requesting template name")
-                    newName = try await $newTemplateName.requestValue("Template name?")
-                    touchDraft()
-                }
-                templateName = newName
-                existingTemplate = config.templates[newName]
-            }
-
-            let resolvedDescription: String
-            if let descriptionOverride {
-                resolvedDescription = descriptionOverride
-            } else {
-                logger.log("template=\(templateName, privacy: .public) — requesting description")
-                resolvedDescription = try await $descriptionOverride.requestValue("Description for \"\(merchant)\"?")
-                touchDraft()
-            }
-
-            let pattern: String
-            if let autoMatchPattern {
-                pattern = autoMatchPattern
-            } else {
-                logger.log("description=\(resolvedDescription, privacy: .public) — requesting auto-match pattern")
-                pattern = try await $autoMatchPattern.requestValue(
-                    "Match other merchant names to \(resolvedDescription) too? Enter text/regex, or leave blank to skip."
-                )
-                touchDraft()
-            }
-            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
-
-            let resolvedFriendId: Int
-            let resolvedFriendFirstName: String
-            let resolvedFriendFullName: String
-            if let existingTemplate {
-                resolvedFriendId = existingTemplate.friendId
-                resolvedFriendFirstName = existingTemplate.friendFirstName
-                resolvedFriendFullName = existingTemplate.friendFullName
-            } else {
-                let friend: SplitwiseFriendEntity
-                if let friendOverride {
-                    friend = friendOverride
-                } else {
-                    logger.log("template=\(templateName, privacy: .public) — requesting Splitwise friend")
-                    let friends = try await SplitwiseFriendEntity.defaultQuery.suggestedEntities()
-                    friend = try await $friendOverride.requestDisambiguation(
-                        among: friends,
-                        dialog: "Split \(templateName) expenses with which friend?"
-                    )
-                    touchDraft()
-                }
-                resolvedFriendId = friend.id
-                resolvedFriendFirstName = friend.firstName
-                resolvedFriendFullName = friend.fullName
-            }
-
-            let resolvedSplitOption: SplitwiseTemplateOption
-            if let existingTemplate {
-                resolvedSplitOption = existingTemplate.splitOption
-            } else {
-                if let splitOptionOverride {
-                    resolvedSplitOption = splitOptionOverride
-                } else {
-                    logger.log("template=\(templateName, privacy: .public) — requesting split option")
-                    resolvedSplitOption = try await $splitOptionOverride.requestDisambiguation(
-                        among: [.ask, .always, .manual, .never],
-                        dialog: "Split \(templateName) expenses with Splitwise?"
-                    )
+                    logger.log("splitOption=ask — requesting runtime choice")
+                    splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(expenseDescription) transaction with Splitwise?")
                     touchDraft()
                 }
             }
 
-            var template = existingTemplate ?? SplitwiseWalletTransactionConfig.Template(
-                friendId: resolvedFriendId,
-                friendFirstName: resolvedFriendFirstName,
-                friendFullName: resolvedFriendFullName,
-                splitOption: resolvedSplitOption
-            )
-            if !pattern.isEmpty {
-                template.autoMatch.append(.init(pattern: pattern, expenseDescription: resolvedDescription))
+            if changed {
+                do {
+                    try SplitwiseWalletTransactionConfigStore.save(config)
+                    logger.log("config saved")
+                } catch {
+                    logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+                }
             }
-            config.templates[templateName] = template
-            config.merchants[merchant] = SplitwiseWalletTransactionConfig.MerchantInfo(
-                expenseDescription: resolvedDescription,
-                templateName: templateName
-            )
-            expenseDescription = resolvedDescription
-            friendId = resolvedFriendId
-            friendFirstName = resolvedFriendFirstName
-            friendFullName = resolvedFriendFullName
-            splitOption = resolvedSplitOption
-            changed = true
-        }
 
-        let splitwiseAction: SplitwiseSplitOption
-        switch splitOption {
-        case .never:
-            splitwiseAction = .never
-        case .always:
-            splitwiseAction = .always
-        case .manual:
-            splitwiseAction = .manual
-        case .ask:
-            if let splitwiseRuntimeChoice {
-                splitwiseAction = splitwiseRuntimeChoice
-            } else {
-                logger.log("splitOption=ask — requesting runtime choice")
-                splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(expenseDescription) transaction with Splitwise?")
+            guard splitwiseAction != .never else {
+                logger.log("splitwiseAction=never — skipping Splitwise")
+                if let draftId {
+                    TransactionDraftGuard.complete(draftId)
+                }
+                return .result(dialog: "\(WalletAutomationDialog.splitwiseSkippedDialog(description: expenseDescription))")
+            }
+
+            var resolvedOwnShare: Double? = splitwiseOwnShare
+            if splitwiseAction == .manual, resolvedOwnShare == nil {
+                logger.log("splitwiseAction=manual — requesting own share")
+                let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
+                resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(expenseDescription), split with \(friendFirstName)?")
                 touchDraft()
             }
-        }
-
-        if changed {
-            do {
-                try SplitwiseWalletTransactionConfigStore.save(config)
-                logger.log("config saved")
-            } catch {
-                logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+            if splitwiseAction == .manual, let resolvedOwnShare {
+                try SplitwiseExpenseHelper.validateOwnShare(resolvedOwnShare, amount: amount)
             }
-        }
 
-        guard splitwiseAction != .never else {
-            logger.log("splitwiseAction=never — skipping Splitwise")
-            if let draftId {
-                TransactionDraftGuard.complete(draftId)
-            }
-            return .result(dialog: "\(WalletAutomationDialog.splitwiseSkippedDialog(description: expenseDescription))")
-        }
-
-        var resolvedOwnShare: Double? = splitwiseOwnShare
-        if splitwiseAction == .manual, resolvedOwnShare == nil {
-            logger.log("splitwiseAction=manual — requesting own share")
             let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
-            resolvedOwnShare = try await $splitwiseOwnShare.requestValue("Your share of the \(formattedAmount) expense at \(expenseDescription), split with \(friendFirstName)?")
-            touchDraft()
-        }
-        if splitwiseAction == .manual, let resolvedOwnShare {
-            try SplitwiseExpenseHelper.validateOwnShare(resolvedOwnShare, amount: amount)
-        }
-
-        let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
-        do {
-            let outcome = try await SplitwiseExpenseHelper.addExpense(
-                amount: amount,
-                description: expenseDescription,
-                friend: SplitwiseFriendEntity(id: friendId, firstName: friendFirstName, fullName: friendFullName),
-                ownShare: (splitwiseAction == .manual) ? resolvedOwnShare : nil
-            )
-            if let draftId {
-                TransactionDraftGuard.complete(draftId)
+            do {
+                let outcome = try await SplitwiseExpenseHelper.addExpense(
+                    amount: amount,
+                    description: expenseDescription,
+                    friend: SplitwiseFriendEntity(id: friendId, firstName: friendFirstName, fullName: friendFullName),
+                    ownShare: (splitwiseAction == .manual) ? resolvedOwnShare : nil
+                )
+                if let draftId {
+                    TransactionDraftGuard.complete(draftId)
+                }
+                let dialog = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: expenseDescription)
+                logger.log("Splitwise result: \(dialog, privacy: .public)")
+                return .result(dialog: "\(dialog)")
+            } catch {
+                logger.error("Splitwise addExpense failed: \(String(describing: error), privacy: .public)")
+                // addExpense already throws a well-formed SplitwiseIntentError in
+                // most cases (validation, not-authenticated, mapped API errors) —
+                // re-mapping those through `.from` again would lose the specific
+                // reason, since `.from` only pattern-matches the raw API errors.
+                throw (error as? SplitwiseIntentError) ?? SplitwiseIntentError.from(error)
             }
-            let dialog = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: expenseDescription)
-            logger.log("Splitwise result: \(dialog, privacy: .public)")
-            return .result(dialog: "\(dialog)")
         } catch {
-            logger.error("Splitwise addExpense failed: \(String(describing: error), privacy: .public)")
-            // addExpense already throws a well-formed SplitwiseIntentError in
-            // most cases (validation, not-authenticated, mapped API errors) —
-            // re-mapping those through `.from` again would lose the specific
-            // reason, since `.from` only pattern-matches the raw API errors.
-            throw (error as? SplitwiseIntentError) ?? SplitwiseIntentError.from(error)
+            // The run is ending without a created/queued expense — no
+            // reason to wait out the usual quiet-period window once
+            // that's certain, so nudge the user right away instead.
+            if let draftId {
+                TransactionDraftGuard.fail(draftId)
+            }
+            throw error
         }
     }
 }
