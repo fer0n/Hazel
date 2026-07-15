@@ -152,6 +152,17 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                 resolvedDescription = try await $descriptionOverride.requestValue("Description for \"\(merchant)\"?")
             }
 
+            let pattern: String
+            if let autoMatchPattern {
+                pattern = autoMatchPattern
+            } else {
+                logger.log("description=\(resolvedDescription, privacy: .public) — requesting auto-match pattern")
+                pattern = try await $autoMatchPattern.requestValue(
+                    "Match other merchant names to \(resolvedDescription) too? Enter text/regex, or leave blank to skip."
+                )
+            }
+            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
+
             let resolvedFriendId: Int
             let resolvedFriendFirstName: String
             let resolvedFriendFullName: String
@@ -196,17 +207,6 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     )
                 }
             }
-
-            let pattern: String
-            if let autoMatchPattern {
-                pattern = autoMatchPattern
-            } else {
-                logger.log("template=\(templateName, privacy: .public) — requesting auto-match pattern")
-                pattern = try await $autoMatchPattern.requestValue(
-                    "Match other merchant names to \(resolvedDescription) too? Enter text/regex, or leave blank to skip."
-                )
-            }
-            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
 
             var template = existingTemplate ?? SplitwiseWalletTransactionConfig.Template(
                 friendId: resolvedFriendId,

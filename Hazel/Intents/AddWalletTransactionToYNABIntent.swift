@@ -54,11 +54,11 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     @Parameter(title: "Payee")
     var payeeOverride: String?
 
-    @Parameter(title: "Category")
-    var categoryOverride: YNABCategoryEntity?
-
     @Parameter(title: "Auto-Match Pattern")
     var autoMatchPattern: String?
+
+    @Parameter(title: "Category")
+    var categoryOverride: YNABCategoryEntity?
 
     @Parameter(title: "Account")
     var accountOverride: YNABAccountEntity?
@@ -177,6 +177,17 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 resolvedPayeeName = try await $payeeOverride.requestValue("Payee name for \"\(merchant)\"?")
             }
 
+            let pattern: String
+            if let autoMatchPattern {
+                pattern = autoMatchPattern
+            } else {
+                logger.log("payeeName=\(resolvedPayeeName, privacy: .public) — requesting auto-match pattern")
+                pattern = try await $autoMatchPattern.requestValue(
+                    "Match other merchant names to \(resolvedPayeeName) too? Enter text/regex, or leave blank to skip."
+                )
+            }
+            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
+
             let resolvedCategoryId: String?
             if let existingTemplate {
                 resolvedCategoryId = existingTemplate.categoryId
@@ -216,17 +227,6 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                     )
                 }
             }
-
-            let pattern: String
-            if let autoMatchPattern {
-                pattern = autoMatchPattern
-            } else {
-                logger.log("categoryId=\(resolvedCategoryId ?? "nil", privacy: .public) — requesting auto-match pattern")
-                pattern = try await $autoMatchPattern.requestValue(
-                    "Match other merchant names to \(resolvedPayeeName) too? Enter text/regex, or leave blank to skip."
-                )
-            }
-            logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
 
             var template = existingTemplate ?? WalletTransactionConfig.Template(
                 categoryId: resolvedCategoryId,
