@@ -336,8 +336,45 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
         )
         logger.log("creating YNAB transaction: accountId=\(accountId, privacy: .public) amountMilliunits=\(milliunits, privacy: .public) payee=\(payeeName, privacy: .public) categoryId=\(categoryId ?? "nil", privacy: .public)")
         let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
-        let outcome = try await PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payeeName)")
 
+        // Never depends on the YNAB call's outcome, so it runs concurrently
+        // with it instead of paying for both round-trips back to back.
+        // Catches its own errors (never throws) so a Splitwise failure never
+        // cancels the still-in-flight YNAB call.
+        func createSplitIfNeeded() async -> String? {
+            guard splitwiseAction != .never else { return nil }
+            guard let friend = resolvedFriend else {
+                logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) but no friend available — skipping split")
+                return ". No default Splitwise friend set — pick one in Hazel, or set \"Split With\" for this automation."
+            }
+            let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
+            do {
+                let splitOutcome = try await SplitwiseExpenseHelper.addExpense(
+                    amount: amount,
+                    description: payeeName,
+                    friend: friend,
+                    ownShare: ownShare
+                )
+                switch splitOutcome {
+                case .created(let shareSummary):
+                    logger.log("Splitwise expense created: \(shareSummary, privacy: .public)")
+                    return ", split with Splitwise — \(shareSummary)"
+                case .queued:
+                    logger.log("Splitwise expense queued — offline")
+                    return ". Splitwise is offline — the split will sync automatically"
+                }
+            } catch {
+                let message = (error as? SplitwiseIntentError)?.localizedStringResource
+                    ?? "Couldn't add the Splitwise expense."
+                logger.error("Splitwise split failed: \(String(describing: error), privacy: .public)")
+                return ". \(String(localized: message))"
+            }
+        }
+
+        async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payeeName)")
+        async let splitDialogFragment = createSplitIfNeeded()
+
+        let outcome = try await ynabOutcome
         var dialog: String
         switch outcome {
         case .created:
@@ -351,32 +388,8 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             dialog = "You're offline — queued \(formattedAmount) at \(payeeName) to add to YNAB once you're back online"
         }
 
-        if splitwiseAction != .never, let friend = resolvedFriend {
-            let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
-            do {
-                let splitOutcome = try await SplitwiseExpenseHelper.addExpense(
-                    amount: amount,
-                    description: payeeName,
-                    friend: friend,
-                    ownShare: ownShare
-                )
-                switch splitOutcome {
-                case .created(let shareSummary):
-                    logger.log("Splitwise expense created: \(shareSummary, privacy: .public)")
-                    dialog += ", split with Splitwise — \(shareSummary)"
-                case .queued:
-                    logger.log("Splitwise expense queued — offline")
-                    dialog += ". Splitwise is offline — the split will sync automatically"
-                }
-            } catch {
-                let message = (error as? SplitwiseIntentError)?.localizedStringResource
-                    ?? "Couldn't add the Splitwise expense."
-                logger.error("Splitwise split failed: \(String(describing: error), privacy: .public)")
-                dialog += ". \(String(localized: message))"
-            }
-        } else if splitwiseAction != .never {
-            logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) but no friend available — skipping split")
-            dialog += ". No default Splitwise friend set — pick one in Hazel, or set \"Split With\" for this automation."
+        if let fragment = await splitDialogFragment {
+            dialog += fragment
         }
 
         logger.log("perform() done")

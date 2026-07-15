@@ -93,20 +93,13 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
             approved: true
         )
         let formattedAmount = amount.formatted(.number.precision(.fractionLength(2)))
-        let outcome = try await PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payee)")
 
-        var dialog: String
-        switch outcome {
-        case .created:
-            if let categoryId = category?.id {
-                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
-            }
-            dialog = "Added \(formattedAmount) at \(payee)"
-        case .queued:
-            dialog = "You're offline — queued \(formattedAmount) at \(payee) to add to YNAB once you're back online"
-        }
-
-        if splitwiseOption != .never, let friend = splitwiseFriend {
+        // Never depends on the YNAB call's outcome, so it runs concurrently
+        // with it instead of paying for both round-trips back to back.
+        // Catches its own errors (never throws) so a Splitwise failure never
+        // cancels the still-in-flight YNAB call.
+        func createSplitIfNeeded() async -> String? {
+            guard splitwiseOption != .never, let friend = splitwiseFriend else { return nil }
             // Mirrors the original shortcut's description: "payee (memo)" when a memo is set.
             let description = (memo?.isEmpty == false) ? "\(payee) (\(memo!))" : payee
             // "Always" forces an equal split even if a share happens to be
@@ -121,15 +114,34 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
                 )
                 switch splitOutcome {
                 case .created(let shareSummary):
-                    dialog += ", split with Splitwise — \(shareSummary)"
+                    return ", split with Splitwise — \(shareSummary)"
                 case .queued:
-                    dialog += ". Splitwise is offline — the split will sync automatically"
+                    return ". Splitwise is offline — the split will sync automatically"
                 }
             } catch {
                 let message = (error as? SplitwiseIntentError)?.localizedStringResource
                     ?? "Couldn't add the Splitwise expense."
-                dialog += ". \(String(localized: message))"
+                return ". \(String(localized: message))"
             }
+        }
+
+        async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payee)")
+        async let splitDialogFragment = createSplitIfNeeded()
+
+        let outcome = try await ynabOutcome
+        var dialog: String
+        switch outcome {
+        case .created:
+            if let categoryId = category?.id {
+                YNABCategoryUsageStore.recordUsage(categoryId: categoryId)
+            }
+            dialog = "Added \(formattedAmount) at \(payee)"
+        case .queued:
+            dialog = "You're offline — queued \(formattedAmount) at \(payee) to add to YNAB once you're back online"
+        }
+
+        if let fragment = await splitDialogFragment {
+            dialog += fragment
         }
 
         return .result(dialog: "\(dialog)")
