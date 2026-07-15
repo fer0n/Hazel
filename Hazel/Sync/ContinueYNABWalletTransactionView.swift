@@ -117,7 +117,7 @@ struct ContinueYNABWalletTransactionView: View {
             } else if let resultMessage {
                 ContentUnavailableView(
                     "Done",
-                    systemImage: "checkmark.circle",
+                    systemImage: "banknote.fill",
                     description: Text(resultMessage)
                 )
             } else {

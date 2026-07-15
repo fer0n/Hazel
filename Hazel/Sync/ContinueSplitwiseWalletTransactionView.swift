@@ -110,7 +110,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
             } else if let resultMessage {
                 ContentUnavailableView(
                     "Done",
-                    systemImage: "checkmark.circle",
+                    systemImage: "person.2.fill",
                     description: Text(resultMessage)
                 )
             } else {

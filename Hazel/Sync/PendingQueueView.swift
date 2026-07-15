@@ -34,7 +34,7 @@ struct PendingQueueView: View {
         .background {
             Color.backgroundColor
             if queue.operations.isEmpty {
-                EmptyListBackground(systemName: "checkmark.circle")
+                EmptyListBackground(systemName: "arrow.triangle.2.circlepath")
             }
         }
         .navigationTitle("Pending Queue")

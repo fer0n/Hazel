@@ -34,7 +34,7 @@ struct TransactionDraftsView: View {
         .background {
             Color.backgroundColor
             if drafts.isEmpty {
-                EmptyListBackground(systemName: "checkmark.circle")
+                EmptyListBackground(systemName: "square.and.pencil")
             }
         }
         .navigationTitle("Transaction Drafts")
