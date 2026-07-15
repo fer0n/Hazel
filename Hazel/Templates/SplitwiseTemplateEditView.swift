@@ -15,7 +15,7 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Spl
 
 private struct LinkedMerchant: Identifiable {
     let merchant: String
-    let expenseDescription: String
+    var expenseDescription: String
     var id: String { merchant }
 }
 
@@ -106,11 +106,12 @@ struct SplitwiseTemplateEditView: View {
 
             if templateName != nil, !linkedMerchants.isEmpty {
                 Section {
-                    ForEach(linkedMerchants) { linked in
+                    ForEach(linkedMerchants.indices, id: \.self) { index in
+                        let linked = linkedMerchants[index]
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(linked.merchant)
-                                Text(linked.expenseDescription)
+                                TextField("Description", text: $linkedMerchants[index].expenseDescription)
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                             }
@@ -131,7 +132,7 @@ struct SplitwiseTemplateEditView: View {
                 } header: {
                     Text("Linked Merchants")
                 } footer: {
-                    Text("Wallet transactions from these exact merchant names go straight to this template. Swipe to unlink one, or use the arrow to move one to a different template.")
+                    Text("Wallet transactions from these exact merchant names go straight to this template. Edit the description, swipe to unlink one, or use the arrow to move one to a different template.")
                 }
             }
 
@@ -215,8 +216,8 @@ struct SplitwiseTemplateEditView: View {
         )
 
         if let templateName {
-            // Drop merchants unlinked in this session before any rename
-            // propagation below, so they aren't renamed back in.
+            // Drop merchants unlinked in this session before the loop below
+            // rewrites the rest, so they aren't added back in.
             let keptMerchants = Set(linkedMerchants.map(\.merchant))
             for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
                 if !keptMerchants.contains(key) {
@@ -225,12 +226,19 @@ struct SplitwiseTemplateEditView: View {
             }
             if templateName != trimmedName {
                 config.templates.removeValue(forKey: templateName)
-                for key in config.merchants.keys where config.merchants[key]?.templateName == templateName {
-                    config.merchants[key]?.templateName = trimmedName
-                }
             }
         }
         config.templates[trimmedName] = template
+
+        // Rewrites every kept linked merchant with its (possibly edited)
+        // description and the template's current name, covering both plain
+        // edits and a template rename in one pass.
+        for linked in linkedMerchants {
+            config.merchants[linked.merchant] = SplitwiseWalletTransactionConfig.MerchantInfo(
+                expenseDescription: linked.expenseDescription.trimmingCharacters(in: .whitespaces),
+                templateName: trimmedName
+            )
+        }
 
         do {
             try SplitwiseWalletTransactionConfigStore.save(config)
@@ -265,7 +273,10 @@ struct SplitwiseTemplateEditView: View {
     /// screen's save() to reconcile once it's removed from `linkedMerchants`.
     private func move(_ linked: LinkedMerchant, to destinationTemplate: String) {
         var config = SplitwiseWalletTransactionConfigStore.load()
-        config.merchants[linked.merchant]?.templateName = destinationTemplate
+        config.merchants[linked.merchant] = SplitwiseWalletTransactionConfig.MerchantInfo(
+            expenseDescription: linked.expenseDescription.trimmingCharacters(in: .whitespaces),
+            templateName: destinationTemplate
+        )
         do {
             try SplitwiseWalletTransactionConfigStore.save(config)
             linkedMerchants.removeAll { $0.id == linked.id }
