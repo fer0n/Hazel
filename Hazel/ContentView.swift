@@ -90,7 +90,15 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .onAppear {
+            if !UserDefaults.standard.bool(forKey: Self.hasLaunchedBeforeKey) {
+                UserDefaults.standard.set(true, forKey: Self.hasLaunchedBeforeKey)
+                showSettings = true
+            }
+        }
     }
+
+    private static let hasLaunchedBeforeKey = "hasLaunchedBefore"
 }
 
 #Preview {
