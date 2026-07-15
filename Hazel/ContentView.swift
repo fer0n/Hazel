@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var pendingQueue = PendingOperationQueue.shared
     @State private var draftRouter = DraftNotificationRouter.shared
     @State private var draftCount = TransactionDraftStore.load().count
+    @State private var splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
     @State private var path: [ContentRoute] = []
     @State private var showSettings = false
     @Environment(\.scenePhase) private var scenePhase
@@ -38,6 +39,11 @@ struct ContentView: View {
                 }
                 .cardRowBackground()
 
+                NavigationLink(value: ContentRoute.splitwiseFileImport) {
+                    RowLabel(title: "Splitwise Import", systemImage: "person.2.badge.plus", badge: splitwiseImportCount)
+                }
+                .cardRowBackground()
+
                 Section {
                     NavigationLink(value: ContentRoute.templates) {
                         RowLabel(title: "Templates", systemImage: "doc.on.doc")
@@ -56,6 +62,8 @@ struct ContentView: View {
                     TransactionDraftsView()
                 case .continueDraft(let draftId):
                     ContinueDraftView(draftId: draftId)
+                case .splitwiseFileImport:
+                    SplitwiseFileImportReviewView()
                 }
             }
             .safeAreaBar(edge: .bottom) {
@@ -77,6 +85,7 @@ struct ContentView: View {
             if newPhase == .active {
                 Task { await pendingQueue.flush() }
                 draftCount = TransactionDraftStore.load().count
+                splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
             }
         }
         // A tapped draft notification always jumps straight to that draft's
@@ -92,6 +101,15 @@ struct ContentView: View {
             guard tapped else { return }
             path = [.pendingQueue]
             draftRouter.pendingQueueReminderTapped = false
+        }
+        // ImportSplitwiseFileIntent brought Hazel to the foreground itself
+        // (see its supportedModes) specifically to land here — same
+        // deep-link pattern, just triggered by the intent instead of a
+        // tapped notification.
+        .onChange(of: draftRouter.pendingSplitwiseImport) { _, pending in
+            guard pending else { return }
+            path = [.splitwiseFileImport]
+            draftRouter.pendingSplitwiseImport = false
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()

@@ -107,7 +107,6 @@ struct SettingsView: View {
                 }
                 .cardRowBackground()
                 
-                
                 Section {
                     NavigationLink(value: SettingsRoute.howHazelWorks) {
                         RowLabel(title: "How Hazel Works")

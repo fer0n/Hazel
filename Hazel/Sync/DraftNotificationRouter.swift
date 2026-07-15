@@ -2,12 +2,15 @@
 //  DraftNotificationRouter.swift
 //  Hazel
 //
-//  Bridges a tapped notification into SwiftUI navigation. Two kinds arrive
-//  here: a "Continue Adding Transaction" notification (see
-//  TransactionDraftGuard), whose identifier is the draft's UUID, and the
-//  fixed-identifier pending-queue reminder (see PendingOperationQueue).
-//  Either way the delegate callback just needs to flag which one fired;
-//  ContentView reacts by pushing the matching destination.
+//  Bridges an external trigger into SwiftUI navigation — either a tapped
+//  notification, or an App Intent that just brought Hazel to the foreground
+//  and wants to land on a specific screen. Three kinds arrive here: a
+//  "Continue Adding Transaction" notification (see TransactionDraftGuard),
+//  whose identifier is the draft's UUID; the fixed-identifier pending-queue
+//  reminder (see PendingOperationQueue); and ImportSplitwiseFileIntent
+//  setting pendingSplitwiseImport directly once it's staged an import.
+//  Either way the trigger just flags which destination fired; ContentView
+//  reacts by pushing it.
 //
 
 import Foundation
@@ -29,6 +32,11 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
     /// Set when the user taps the pending-queue reminder; ContentView
     /// observes this and clears it once it's acted on.
     var pendingQueueReminderTapped = false
+
+    /// Set by ImportSplitwiseFileIntent right after it stages a parsed
+    /// import (not notification-driven, but the same one-shot signal shape)
+    /// — ContentView observes this and clears it once it's acted on.
+    var pendingSplitwiseImport = false
 
     private override init() {
         super.init()
