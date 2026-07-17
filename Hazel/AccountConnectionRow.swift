@@ -10,6 +10,10 @@ struct AccountConnectionRow: View {
     let isConnected: Bool
     let connect: () -> Void
     let disconnect: () -> Void
+    /// Draws attention to the Connect button with a filled, tinted style
+    /// instead of the plain bordered one — used by the onboarding wizard to
+    /// guide a new user toward connecting an account.
+    var highlightWhenDisconnected: Bool = false
 
     @State private var showDisconnectConfirm = false
 
@@ -22,22 +26,36 @@ struct AccountConnectionRow: View {
                     .frame(width: 8, height: 8)
             }
             Spacer()
-            Button(isConnected ? "Disconnect" : "Connect") {
-                if isConnected {
-                    showDisconnectConfirm = true
-                } else {
-                    connect()
+            connectButton
+                .confirmationDialog(
+                    "Disconnect from \(title)?",
+                    isPresented: $showDisconnectConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Disconnect", role: .destructive, action: disconnect)
                 }
+        }
+    }
+
+    // `.bordered` and `.borderedProminent` are distinct concrete types, so
+    // picking between them needs a branch rather than a ternary on
+    // `.buttonStyle(...)`.
+    @ViewBuilder
+    private var connectButton: some View {
+        let action = {
+            if isConnected {
+                showDisconnectConfirm = true
+            } else {
+                connect()
             }
-            .buttonStyle(.bordered)
-            .tint(isConnected ? .gray : nil)
-            .confirmationDialog(
-                "Disconnect from \(title)?",
-                isPresented: $showDisconnectConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Disconnect", role: .destructive, action: disconnect)
-            }
+        }
+        if highlightWhenDisconnected && !isConnected {
+            Button(isConnected ? "Disconnect" : "Connect", action: action)
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(isConnected ? "Disconnect" : "Connect", action: action)
+                .buttonStyle(.bordered)
+                .tint(isConnected ? .gray : nil)
         }
     }
 }

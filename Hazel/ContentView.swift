@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
     @State private var path: [ContentRoute] = []
     @State private var showSettings = false
+    @State private var showOnboarding = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -114,10 +115,14 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showOnboarding) {
+            OnboardingView()
+                .interactiveDismissDisabled()
+        }
         .onAppear {
             if !UserDefaults.standard.bool(forKey: Self.hasLaunchedBeforeKey) {
                 UserDefaults.standard.set(true, forKey: Self.hasLaunchedBeforeKey)
-                showSettings = true
+                showOnboarding = true
             }
         }
     }

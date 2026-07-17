@@ -44,5 +44,13 @@ struct HazelShortcuts: AppShortcutsProvider {
             shortTitle: "Import File to Splitwise",
             systemImageName: "doc.badge.plus"
         )
+        AppShortcut(
+            intent: ImportTemplateFileIntent(),
+            phrases: [
+                "Import templates to \(.applicationName)",
+            ],
+            shortTitle: "Import Templates",
+            systemImageName: "doc.on.doc"
+        )
     }
 }

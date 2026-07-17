@@ -6,9 +6,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
-import os
-
-private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "SettingsView")
 
 struct SettingsView: View {
     @State private var ynabAuth = YNABAuthService()
@@ -22,7 +19,12 @@ struct SettingsView: View {
     @State private var templateExportDocument: JSONFileDocument?
     @State private var templateExportResultMessage: String?
     @State private var templateExportErrorMessage: String?
+    #if DEBUG
+    @State private var showOnboardingPreview = false
+    #endif
+    @State private var migration = LegacyMigrationCallbackHandler()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
@@ -88,6 +90,25 @@ struct SettingsView: View {
                 .cardRowBackground()
 
                 Section {
+                    Button("Install Shortcut") {
+                        openURL(LegacyBucketMigrationShortcut.installURL, prefersInApp: true)
+                    }
+                    Button("Run Migration") {
+                        migration.reset()
+                        openURL(LegacyBucketMigrationShortcut.runURL)
+                    }
+                    if let resultMessage = migration.resultMessage {
+                        Text(resultMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Install the \"\(LegacyBucketMigrationShortcut.name)\" Shortcut once, then run it here to pull buckets and merchants straight out of the old \"Transaction → YNAB\" Shortcut's DataJar storage.")
+                        .footerText()
+                }
+                .cardRowBackground()
+
+                Section {
                     Button("Export Templates") {
                         exportTemplates()
                     }
@@ -111,8 +132,21 @@ struct SettingsView: View {
                     NavigationLink(value: SettingsRoute.howHazelWorks) {
                         RowLabel(title: "How Hazel Works")
                     }
+                } footer: {
+                    // Required by the YNAB API Terms of Service.
+                    Text("We are not affiliated, associated, or in any way officially connected with YNAB or any of its subsidiaries or affiliates.")
+                        .footerText()
                 }
                 .cardRowBackground()
+
+                #if DEBUG
+                Section("Debug") {
+                    Button("Show Onboarding") {
+                        showOnboardingPreview = true
+                    }
+                }
+                .cardRowBackground()
+                #endif
             }
             .themedList(background: .sheetBackgroundColor)
             .navigationTitle("Settings")
@@ -147,6 +181,12 @@ struct SettingsView: View {
                     templateExportErrorMessage = "Failed to export: \(error.localizedDescription)"
                 }
             }
+            #if DEBUG
+            .sheet(isPresented: $showOnboardingPreview) {
+                OnboardingView()
+            }
+            #endif
+            .legacyMigrationCallback(migration, openURL: openURL)
         }
     }
 
@@ -165,59 +205,12 @@ struct SettingsView: View {
         isImportingBuckets = true
         defer { isImportingBuckets = false }
 
-        let didAccess = url.startAccessingSecurityScopedResource()
-        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-
-        do {
-            let data = try Data(contentsOf: url)
-
-            // Tries Hazel's own export shape first (a full WalletTransactionConfig
-            // — no field translation needed), and only falls back to the legacy
-            // bucket shape if that fails to decode. The two are structurally
-            // distinct (different field names on `merchants`), so this never
-            // misidentifies one as the other.
-            if let nativeConfig = try? JSONDecoder().decode(WalletTransactionConfig.self, from: data) {
-                var config = WalletTransactionConfigStore.load()
-                let result = BucketImporter.mergeNative(nativeConfig, into: &config)
-                try WalletTransactionConfigStore.save(config)
-                logger.log("imported native export: \(result.importedTemplateCount, privacy: .public) templates, \(result.importedMerchantCount, privacy: .public) merchants")
-                bucketImportResultMessage = summary(for: result)
-                return
-            }
-
-            let file = try JSONDecoder().decode(BucketImportFile.self, from: data)
-
-            var categories = YNABCategoryCacheStore.load() ?? []
-            if let token = await YNABAuthService.validAccessToken(),
-                let fetched = try? await YNABCategoryCacheStore.fetch(token: token) {
-                categories = fetched
-            }
-
-            var config = WalletTransactionConfigStore.load()
-            let result = BucketImporter.merge(file, into: &config, categories: categories)
-            try WalletTransactionConfigStore.save(config)
-
-            logger.log("imported \(result.importedBucketCount, privacy: .public) buckets, \(result.importedMerchantCount, privacy: .public) merchants")
-            bucketImportResultMessage = summary(for: result)
-        } catch {
-            logger.error("failed to import buckets file: \(String(describing: error), privacy: .public)")
-            bucketImportErrorMessage = "Failed to import: \(error.localizedDescription)"
+        switch await TemplateImportService.importBuckets(from: url) {
+        case .success(let message):
+            bucketImportResultMessage = message
+        case .failure(let error):
+            bucketImportErrorMessage = error.message
         }
-    }
-
-    private func summary(for result: BucketImporter.Result) -> String {
-        var message = "Imported \(result.importedBucketCount) bucket\(result.importedBucketCount == 1 ? "" : "s") and \(result.importedMerchantCount) merchant\(result.importedMerchantCount == 1 ? "" : "s")."
-        if !result.unresolvedCategoryNames.isEmpty {
-            message += " Couldn't match category: \(result.unresolvedCategoryNames.joined(separator: ", "))."
-        }
-        if result.skippedCardCount > 0 {
-            message += " Skipped \(result.skippedCardCount) card mapping\(result.skippedCardCount == 1 ? "" : "s") — cards are linked automatically the first time you use them."
-        }
-        return message
-    }
-
-    private func summary(for result: BucketImporter.NativeMergeResult) -> String {
-        "Imported \(result.importedTemplateCount) template\(result.importedTemplateCount == 1 ? "" : "s"), \(result.importedMerchantCount) merchant\(result.importedMerchantCount == 1 ? "" : "s"), and \(result.importedCardCount) card\(result.importedCardCount == 1 ? "" : "s")."
     }
 
     private func exportTemplates() {
