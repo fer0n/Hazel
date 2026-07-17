@@ -38,7 +38,10 @@ struct TransactionDraftsView: View {
             }
         }
         .navigationTitle("Transaction Drafts")
-        .task {
+        .onAppear {
+            // Covers both the initial appearance and reappearing after
+            // popping back from a pushed ContinueDraftView that dismissed
+            // itself on completion.
             drafts = TransactionDraftStore.load()
         }
     }

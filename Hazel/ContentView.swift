@@ -195,6 +195,14 @@ struct ContentView: View {
                 UserDefaults.standard.set(true, forKey: Self.hasLaunchedBeforeKey)
                 showOnboarding = true
             }
+            // Reappearing here also covers popping back from a pushed
+            // ContinueDraftView after it dismisses itself on completion —
+            // that path never triggers the scenePhase handler below.
+            withAnimation {
+                drafts = TransactionDraftStore.load()
+                splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
+                history = TransactionHistoryStore.load()
+            }
         }
         .alert(
             readdAlert?.title ?? "",

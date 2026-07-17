@@ -27,8 +27,8 @@ struct ContinueYNABWalletTransactionView: View {
     @State private var splitwiseAuth = SplitwiseAuthService()
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
-    @State private var resultMessage: String?
     @State private var isSubmitting = false
+    @Environment(\.dismiss) private var dismiss
 
     /// True once a merchant→template match is found — payee/category/split
     /// setting are then fixed (read-only here) instead of asked again.
@@ -137,12 +137,6 @@ struct ContinueYNABWalletTransactionView: View {
                     "Not Connected",
                     systemImage: "exclamationmark.triangle",
                     description: Text("Connect your YNAB account in Hazel first.")
-                )
-            } else if let resultMessage {
-                ContentUnavailableView(
-                    "Done",
-                    systemImage: "banknote.fill",
-                    description: Text(resultMessage)
                 )
             } else {
                 content
@@ -457,12 +451,10 @@ struct ContinueYNABWalletTransactionView: View {
 
         do {
             let outcome = try await ynabOutcome
-            var dialog = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: finalPayeeName, categoryId: finalCategoryId)
-            if let fragment = await splitDialogFragment {
-                dialog += fragment
-            }
+            _ = WalletAutomationDialog.handleYNABOutcome(outcome, formattedAmount: formattedAmount, payeeName: finalPayeeName, categoryId: finalCategoryId)
+            _ = await splitDialogFragment
             TransactionDraftGuard.complete(draft.id)
-            resultMessage = dialog
+            dismiss()
         } catch {
             errorMessage = (error as? YNABIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the transaction."
         }

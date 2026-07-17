@@ -26,8 +26,8 @@ struct ContinueSplitwiseWalletTransactionView: View {
 
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
-    @State private var resultMessage: String?
     @State private var isSubmitting = false
+    @Environment(\.dismiss) private var dismiss
 
     /// True once a merchant→template match is found — description/split
     /// setting are then fixed (read-only here) instead of asked again.
@@ -110,12 +110,6 @@ struct ContinueSplitwiseWalletTransactionView: View {
                     "Not Connected",
                     systemImage: "exclamationmark.triangle",
                     description: Text("Connect your Splitwise account in Hazel first.")
-                )
-            } else if let resultMessage {
-                ContentUnavailableView(
-                    "Done",
-                    systemImage: "person.2.fill",
-                    description: Text(resultMessage)
                 )
             } else {
                 content
@@ -300,7 +294,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
         let action = resolvedSplitwiseAction
         guard action != .never else {
             TransactionDraftGuard.complete(draft.id)
-            resultMessage = WalletAutomationDialog.splitwiseSkippedDialog(description: finalDescription)
+            dismiss()
             return
         }
 
@@ -319,16 +313,15 @@ struct ContinueSplitwiseWalletTransactionView: View {
             ownShare = parsed
         }
 
-        let formattedAmount = amount.asMoneyString
         do {
-            let outcome = try await SplitwiseExpenseHelper.addExpense(
+            _ = try await SplitwiseExpenseHelper.addExpense(
                 amount: amount,
                 description: finalDescription,
                 friend: SplitwiseFriendEntity(id: finalFriendId, firstName: finalFriendFirstName, fullName: finalFriendFullName),
                 ownShare: ownShare
             )
             TransactionDraftGuard.complete(draft.id)
-            resultMessage = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: finalDescription)
+            dismiss()
         } catch {
             errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the Splitwise expense."
         }
