@@ -24,6 +24,7 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Con
 struct ContinueSplitwiseWalletTransactionView: View {
     let draft: TransactionDraft
 
+    @State private var splitwiseAuth = SplitwiseAuthService()
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
     @State private var isSubmitting = false
@@ -106,17 +107,17 @@ struct ContinueSplitwiseWalletTransactionView: View {
     var body: some View {
         Group {
             if notAuthenticated {
-                ContentUnavailableView(
-                    "Not Connected",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("Connect your Splitwise account in Hazel first.")
-                )
+                NotConnectedView(service: "Splitwise", connect: splitwiseAuth.signIn)
             } else {
                 content
             }
         }
         .navigationTitle("Transaction draft")
         .task { await load() }
+        .onAuthenticated(splitwiseAuth.isAuthenticated) {
+            notAuthenticated = false
+            Task { await load() }
+        }
     }
 
     private var content: some View {

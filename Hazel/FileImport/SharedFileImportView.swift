@@ -55,6 +55,9 @@ struct SharedFileImportView: View {
     /// lookup rather than a disk read per row.
     @State private var handledIDs: Set<String> = []
 
+    @State private var ynabAuth = YNABAuthService()
+    @State private var splitwiseAuth = SplitwiseAuthService()
+
     @State private var ynabNotAuthenticated = false
     @State private var accounts: [YNABAccount] = []
     @State private var isLoadingAccounts = false
@@ -244,6 +247,14 @@ struct SharedFileImportView: View {
             .onChange(of: selectedAccountId) { syncStagingTargets() }
             .onChange(of: selectedFriendId) { syncStagingTargets() }
             .onChange(of: includeMemos) { syncStagingTargets() }
+            .onAuthenticated(ynabAuth.isAuthenticated) {
+                ynabNotAuthenticated = false
+                Task { await loadActiveTarget() }
+            }
+            .onAuthenticated(splitwiseAuth.isAuthenticated) {
+                splitwiseNotAuthenticated = false
+                Task { await loadActiveTarget() }
+            }
             .columnMappingPrompt(prompt)
     }
 
@@ -281,10 +292,10 @@ struct SharedFileImportView: View {
                 }
 
                 if activeNotAuthenticated {
-                    Text("Connect your \(destination.label) account in Hazel first.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .cardRowBackground()
+                    NotConnectedRow(service: destination.label) {
+                        destination == .splitwise ? splitwiseAuth.signIn() : ynabAuth.signIn()
+                    }
+                    .cardRowBackground()
                 } else if destination == .splitwise {
                     SplitwiseFriendPickerRow(
                         resolvedFriendName: nil,

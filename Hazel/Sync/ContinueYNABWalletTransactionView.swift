@@ -24,6 +24,7 @@ private let logger = Logger(subsystem: "com.pentlandFirth.Hazel", category: "Con
 struct ContinueYNABWalletTransactionView: View {
     let draft: TransactionDraft
 
+    @State private var ynabAuth = YNABAuthService()
     @State private var splitwiseAuth = SplitwiseAuthService()
     @State private var notAuthenticated = false
     @State private var errorMessage: String?
@@ -133,17 +134,17 @@ struct ContinueYNABWalletTransactionView: View {
     var body: some View {
         Group {
             if notAuthenticated {
-                ContentUnavailableView(
-                    "Not Connected",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("Connect your YNAB account in Hazel first.")
-                )
+                NotConnectedView(service: "YNAB", connect: ynabAuth.signIn)
             } else {
                 content
             }
         }
         .navigationTitle("Transaction draft")
         .task { await load() }
+        .onAuthenticated(ynabAuth.isAuthenticated) {
+            notAuthenticated = false
+            Task { await load() }
+        }
     }
 
     private var content: some View {
