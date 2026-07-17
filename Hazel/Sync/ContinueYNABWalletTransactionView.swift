@@ -57,6 +57,16 @@ struct ContinueYNABWalletTransactionView: View {
     @State private var isLoadingFriends = false
     @State private var ownShareText = ""
 
+    /// True once the resolved template already has its own cached
+    /// Splitwise friend — that takes precedence over the app-wide default
+    /// (SplitwiseDefaultFriendStore), matching AddWalletTransactionToYNABIntent's
+    /// resolution order, and shown read-only rather than re-offered as a
+    /// choice. Kept as a full entity (not just an id) so submit() can use it
+    /// directly instead of requiring a match in the (possibly still-loading,
+    /// or since-changed) fetched `friends` list.
+    @State private var templateHasFriend = false
+    @State private var templateFriend: SplitwiseFriendEntity?
+
     /// Preview/testing seam only — nil (the default) always falls through
     /// to the real Keychain check. Lets `#Preview` render the form itself
     /// instead of racing the async "Not Connected" gate.
@@ -72,6 +82,7 @@ struct ContinueYNABWalletTransactionView: View {
         guard case .ynabWallet(let merchant, _, let card) = draft.payload else { return }
 
         let config = WalletTransactionConfigStore.load()
+        var resolvedTemplateFriend: (id: Int, firstName: String, fullName: String)?
         if let info = config.resolvedMerchantInfo(for: merchant) {
             _templateResolved = State(initialValue: true)
             _resolvedTemplateName = State(initialValue: info.templateName)
@@ -79,6 +90,7 @@ struct ContinueYNABWalletTransactionView: View {
             let template = config.templates[info.templateName]
             _selectedCategoryId = State(initialValue: template?.categoryId)
             _resolvedTemplateSplitwiseOption = State(initialValue: template?.splitwiseOption ?? .never)
+            resolvedTemplateFriend = template?.splitwiseFriend
         } else {
             _payeeName = State(initialValue: merchant)
         }
@@ -88,7 +100,11 @@ struct ContinueYNABWalletTransactionView: View {
             _selectedAccountId = State(initialValue: accountId)
         }
 
-        if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+        if let resolvedTemplateFriend {
+            _templateHasFriend = State(initialValue: true)
+            _templateFriend = State(initialValue: SplitwiseFriendEntity(id: resolvedTemplateFriend.id, firstName: resolvedTemplateFriend.firstName, fullName: resolvedTemplateFriend.fullName))
+            _selectedFriendId = State(initialValue: resolvedTemplateFriend.id)
+        } else if let defaultFriend = SplitwiseDefaultFriendStore.load() {
             _selectedFriendId = State(initialValue: defaultFriend.id)
         }
     }
@@ -223,6 +239,7 @@ struct ContinueYNABWalletTransactionView: View {
 
                     if resolvedSplitwiseAction != .never {
                         SplitwiseFriendPickerRow(
+                            resolvedFriendName: templateHasFriend ? templateFriend?.fullName : nil,
                             isLoading: isLoadingFriends,
                             friends: friends,
                             selectedFriendId: $selectedFriendId
@@ -410,11 +427,14 @@ struct ContinueYNABWalletTransactionView: View {
 
         let friend: SplitwiseFriendEntity?
         if action != .never {
-            guard let selectedFriendId, let match = friends.first(where: { $0.id == selectedFriendId }) else {
+            if let templateFriend {
+                friend = templateFriend
+            } else if let selectedFriendId, let match = friends.first(where: { $0.id == selectedFriendId }) {
+                friend = SplitwiseFriendEntity(id: match.id, firstName: match.firstName, fullName: match.fullName)
+            } else {
                 errorMessage = "Pick a Splitwise friend."
                 return
             }
-            friend = SplitwiseFriendEntity(id: match.id, firstName: match.firstName, fullName: match.fullName)
         } else {
             friend = nil
         }
