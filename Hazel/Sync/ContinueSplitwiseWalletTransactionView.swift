@@ -134,7 +134,11 @@ struct ContinueSplitwiseWalletTransactionView: View {
             .listRowBackground(Color.backgroundColor)
 
             Section {
-                DraftDetailRow(icon: "text.alignleft", title: "Description") {
+                DraftDetailRow(
+                    icon: "text.alignleft",
+                    title: "Description",
+                    isIncomplete: !templateResolved && expenseDescription.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
                     if templateResolved {
                         Text(expenseDescription)
                     } else {
@@ -155,7 +159,8 @@ struct ContinueSplitwiseWalletTransactionView: View {
                     resolvedFriendName: templateHasFriend ? (friends.first { $0.id == selectedFriendId }?.fullName ?? "Unknown") : nil,
                     isLoading: isLoadingFriends,
                     friends: friends,
-                    selectedFriendId: $selectedFriendId
+                    selectedFriendId: $selectedFriendId,
+                    isIncomplete: !templateHasFriend && selectedFriendId == nil
                 )
 
                 SplitwiseOptionRow(
@@ -166,11 +171,11 @@ struct ContinueSplitwiseWalletTransactionView: View {
                 )
 
                 if effectiveSplitOption == .ask {
-                    SplitwiseAskRow(runtimeChoice: $splitwiseRuntimeChoice)
+                    SplitwiseAskRow(runtimeChoice: $splitwiseRuntimeChoice, isIncomplete: splitwiseRuntimeChoice == nil)
                 }
 
                 if resolvedSplitwiseAction == .manual {
-                    SplitwiseOwnShareRow(ownShareText: $ownShareText)
+                    SplitwiseOwnShareRow(ownShareText: $ownShareText, isIncomplete: Double(ownShareText) == nil)
                 }
             }
 

@@ -12,6 +12,9 @@ import SwiftUI
 struct DraftDetailRow<Content: View>: View {
     let icon: String
     let title: String
+    /// Highlights the icon and value in the accent color — used to flag a
+    /// field that still needs to be filled out before the draft can submit.
+    var isIncomplete: Bool = false
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -21,14 +24,14 @@ struct DraftDetailRow<Content: View>: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .padding(.trailing, 12)
-            
+
             Text(title)
                 .lineLimit(1)
-            
+
             Spacer(minLength: 10)
             content()
                 .lineLimit(1)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isIncomplete ? Color.accentColor : Color.secondary)
         }
         .padding(.vertical, 3)
     }

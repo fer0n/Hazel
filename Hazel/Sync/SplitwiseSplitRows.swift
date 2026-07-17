@@ -49,9 +49,10 @@ struct SplitwiseFriendPickerRow: View {
     /// "None", but e.g. TemplateEditView passes "Default (…)" when an
     /// app-wide default Splitwise friend applies instead.
     var noneLabel: String = "None"
+    var isIncomplete: Bool = false
 
     var body: some View {
-        DraftDetailRow(icon: "person.2.fill", title: "Split With") {
+        DraftDetailRow(icon: "person.2.fill", title: "Split With", isIncomplete: isIncomplete) {
             if let resolvedFriendName {
                 Text(resolvedFriendName)
             } else if isLoading {
@@ -76,9 +77,10 @@ struct SplitwiseFriendPickerRow: View {
 /// setting is `.ask` and no runtime choice has been made yet this run.
 struct SplitwiseAskRow: View {
     @Binding var runtimeChoice: SplitwiseSplitOption?
+    var isIncomplete: Bool = false
 
     var body: some View {
-        DraftDetailRow(icon: "questionmark.circle.fill", title: "Split Transaction?") {
+        DraftDetailRow(icon: "questionmark.circle.fill", title: "Split Transaction?", isIncomplete: isIncomplete) {
             MenuPickerField(selection: $runtimeChoice, label: runtimeChoice?.label ?? "Choose") {
                 Text("Choose").tag(SplitwiseSplitOption?.none)
                 ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
@@ -93,9 +95,10 @@ struct SplitwiseAskRow: View {
 /// The manual own-share amount entry — only shown for a `.manual` split.
 struct SplitwiseOwnShareRow: View {
     @Binding var ownShareText: String
+    var isIncomplete: Bool = false
 
     var body: some View {
-        DraftDetailRow(icon: "eurosign.circle.fill", title: "Your Share") {
+        DraftDetailRow(icon: "eurosign.circle.fill", title: "Your Share", isIncomplete: isIncomplete) {
             TextField("Your Share", text: $ownShareText)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)

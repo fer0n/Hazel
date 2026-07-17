@@ -161,7 +161,11 @@ struct ContinueYNABWalletTransactionView: View {
             .listRowBackground(Color.backgroundColor)
 
             Section {
-                DraftDetailRow(icon: "text.alignleft", title: "Payee") {
+                DraftDetailRow(
+                    icon: "text.alignleft",
+                    title: "Payee",
+                    isIncomplete: !templateResolved && payeeName.trimmingCharacters(in: .whitespaces).isEmpty
+                ) {
                     if templateResolved {
                         Text(payeeName)
                     } else {
@@ -190,7 +194,7 @@ struct ContinueYNABWalletTransactionView: View {
                 }
                 .cardRowBackground()
 
-                DraftDetailRow(icon: "creditcard.fill", title: "Account") {
+                DraftDetailRow(icon: "creditcard.fill", title: "Account", isIncomplete: selectedAccountId == nil) {
                     if accountResolved {
                         Text(accounts.first { $0.id == selectedAccountId }?.name ?? "Unknown")
                     } else if isLoadingAccounts {
@@ -230,7 +234,7 @@ struct ContinueYNABWalletTransactionView: View {
                     )
 
                     if effectiveSplitwiseOption == .ask {
-                        SplitwiseAskRow(runtimeChoice: $splitwiseRuntimeChoice)
+                        SplitwiseAskRow(runtimeChoice: $splitwiseRuntimeChoice, isIncomplete: splitwiseRuntimeChoice == nil)
                     }
 
                     if resolvedSplitwiseAction != .never {
@@ -238,12 +242,13 @@ struct ContinueYNABWalletTransactionView: View {
                             resolvedFriendName: templateHasFriend ? templateFriend?.fullName : nil,
                             isLoading: isLoadingFriends,
                             friends: friends,
-                            selectedFriendId: $selectedFriendId
+                            selectedFriendId: $selectedFriendId,
+                            isIncomplete: !templateHasFriend && selectedFriendId == nil
                         )
                     }
 
                     if resolvedSplitwiseAction == .manual {
-                        SplitwiseOwnShareRow(ownShareText: $ownShareText)
+                        SplitwiseOwnShareRow(ownShareText: $ownShareText, isIncomplete: Double(ownShareText) == nil)
                     }
                 }
             }
