@@ -17,7 +17,7 @@ struct TransactionHistoryEntry: Codable, Identifiable {
     let summary: String
     let payload: PendingOperation.Payload
 
-    var service: PendingOperation.Service {
+    var service: TransactionService {
         switch payload {
         case .ynabTransaction: .ynab
         case .splitwiseExpense: .splitwise

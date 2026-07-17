@@ -19,7 +19,7 @@ struct TransactionDraftsView: View {
         List {
             ForEach(drafts) { draft in
                 NavigationLink(value: ContentRoute.continueDraft(draft.id)) {
-                    TransactionDraftRow(draft: draft)
+                    TransactionSummaryRow(service: draft.service, date: draft.startedAt, title: draft.merchant, amount: draft.formattedAmount, showChevron: true)
                 }
                 .cardRowBackground()
                 .swipeActions {

@@ -48,9 +48,11 @@ final class PendingOperationQueue {
 
     func enqueue(_ payload: PendingOperation.Payload, summary: String) {
         let wasEmpty = operations.isEmpty
-        operations.append(
-            PendingOperation(id: UUID(), queuedAt: Date(), summary: summary, attemptCount: 0, lastError: nil, payload: payload)
-        )
+        withAnimation {
+            operations.append(
+                PendingOperation(id: UUID(), queuedAt: Date(), summary: summary, attemptCount: 0, lastError: nil, payload: payload)
+            )
+        }
         persist()
         updateBadge()
         if wasEmpty {

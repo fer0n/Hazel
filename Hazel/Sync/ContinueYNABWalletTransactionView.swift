@@ -33,6 +33,7 @@ struct ContinueYNABWalletTransactionView: View {
     /// True once a merchant→template match is found — payee/category/split
     /// setting are then fixed (read-only here) instead of asked again.
     @State private var templateResolved = false
+    @State private var resolvedTemplateName: String?
     @State private var payeeName = ""
     @State private var categories: [YNABCategory] = []
     @State private var selectedCategoryId: String?
@@ -56,8 +57,14 @@ struct ContinueYNABWalletTransactionView: View {
     @State private var isLoadingFriends = false
     @State private var ownShareText = ""
 
-    init(draft: TransactionDraft) {
+    /// Preview/testing seam only — nil (the default) always falls through
+    /// to the real Keychain check. Lets `#Preview` render the form itself
+    /// instead of racing the async "Not Connected" gate.
+    let isAuthenticatedOverride: Bool?
+
+    init(draft: TransactionDraft, isAuthenticatedOverride: Bool? = nil) {
         self.draft = draft
+        self.isAuthenticatedOverride = isAuthenticatedOverride
 
         // Resolved synchronously (local disk reads only) so the form's
         // payee/category/account defaults are in place on the very first
@@ -67,6 +74,7 @@ struct ContinueYNABWalletTransactionView: View {
         let config = WalletTransactionConfigStore.load()
         if let info = config.resolvedMerchantInfo(for: merchant) {
             _templateResolved = State(initialValue: true)
+            _resolvedTemplateName = State(initialValue: info.templateName)
             _payeeName = State(initialValue: info.payeeName)
             let template = config.templates[info.templateName]
             _selectedCategoryId = State(initialValue: template?.categoryId)
@@ -121,33 +129,36 @@ struct ContinueYNABWalletTransactionView: View {
                     description: Text(resultMessage)
                 )
             } else {
-                form
+                content
             }
         }
-        .navigationTitle("Continue Transaction")
+        .navigationTitle("Transaction draft")
         .task { await load() }
     }
 
-    private var form: some View {
-        Form {
+    private var content: some View {
+        List {
             Section {
-                Text(draft.summary).font(.headline)
-                Text("Started \(RelativeDateTimeFormatter().localizedString(for: draft.startedAt, relativeTo: Date()))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                TransactionDraftHeader(amount: draft.formattedAmount, merchant: draft.merchant, startedAt: draft.startedAt)
             }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.backgroundColor)
 
-            if templateResolved {
-                Section("Resolved From Template") {
-                    LabeledContent("Payee", value: payeeName)
-                    LabeledContent("Category", value: categories.first { $0.id == selectedCategoryId }?.name ?? "None")
+            Section {
+                DraftDetailRow(icon: "text.alignleft", title: "Payee") {
+                    if templateResolved {
+                        Text(payeeName)
+                    } else {
+                        TextField("Payee Name", text: $payeeName)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
-            } else {
-                Section("Payee") {
-                    TextField("Payee Name", text: $payeeName)
-                }
-                Section("Category") {
-                    if isLoadingCategories {
+                .cardRowBackground()
+
+                DraftDetailRow(icon: "tag.fill", title: "Category") {
+                    if templateResolved {
+                        Text(categories.first { $0.id == selectedCategoryId }?.name ?? "None")
+                    } else if isLoadingCategories {
                         ProgressView()
                     } else {
                         Picker(selection: $selectedCategoryId) {
@@ -156,77 +167,112 @@ struct ContinueYNABWalletTransactionView: View {
                                 Text(category.name).tag(Optional(category.id))
                             }
                         } label: {
-                            Text("Category").foregroundStyle(.tint)
+                            EmptyView()
                         }
-                        .tint(.accentColor)
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Color.foregroundColor)
                     }
                 }
-            }
+                .cardRowBackground()
 
-            Section("Account") {
-                if accountResolved {
-                    LabeledContent("Account", value: accounts.first { $0.id == selectedAccountId }?.name ?? "Unknown")
-                } else if isLoadingAccounts {
-                    ProgressView()
-                } else {
-                    Picker(selection: $selectedAccountId) {
-                        Text("None").tag(String?.none)
-                        ForEach(accounts, id: \.id) { account in
-                            Text(account.name).tag(Optional(account.id))
+                DraftDetailRow(icon: "creditcard.fill", title: "Account") {
+                    if accountResolved {
+                        Text(accounts.first { $0.id == selectedAccountId }?.name ?? "Unknown")
+                    } else if isLoadingAccounts {
+                        ProgressView()
+                    } else {
+                        Picker(selection: $selectedAccountId) {
+                            Text("None").tag(String?.none)
+                            ForEach(accounts, id: \.id) { account in
+                                Text(account.name).tag(Optional(account.id))
+                            }
+                        } label: {
+                            EmptyView()
                         }
-                    } label: {
-                        Text("Account").foregroundStyle(.tint)
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Color.foregroundColor)
                     }
-                    .tint(.accentColor)
                 }
+                .cardRowBackground()
+
+                DraftDetailRow(icon: "doc.on.doc", title: "Template") {
+                    Text(templateResolved ? (resolvedTemplateName ?? "Unknown") : "New")
+                }
+                .cardRowBackground()
+
+                DraftDetailRow(icon: draft.service.systemImage, title: "Provider") {
+                    Text(draft.service.displayName)
+                }
+                .cardRowBackground()
             }
 
             if splitwiseAuth.isAuthenticated {
-                Section("Splitwise") {
-                    if templateResolved {
-                        LabeledContent("Split Setting", value: resolvedTemplateSplitwiseOption.label)
-                    } else {
-                        Picker(selection: $newTemplateSplitwiseOption) {
-                            ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
-                                Text(option.label).tag(option)
+                Section("Split") {
+                    DraftDetailRow(icon: "divide.circle.fill", title: "Split With Splitwise") {
+                        if templateResolved {
+                            Text(resolvedTemplateSplitwiseOption.label)
+                        } else {
+                            Picker(selection: $newTemplateSplitwiseOption) {
+                                ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
+                                    Text(option.label).tag(option)
+                                }
+                            } label: {
+                                EmptyView()
                             }
-                        } label: {
-                            Text("Split With Splitwise").foregroundStyle(.tint)
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .tint(Color.foregroundColor)
                         }
-                        .tint(.accentColor)
                     }
+                    .cardRowBackground()
 
                     if effectiveSplitwiseOption == .ask {
-                        Picker(selection: $splitwiseRuntimeChoice) {
-                            Text("Choose").tag(SplitwiseSplitOption?.none)
-                            ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
-                                Text(option.label).tag(SplitwiseSplitOption?.some(option))
+                        DraftDetailRow(icon: "questionmark.circle.fill", title: "Split Transaction?") {
+                            Picker(selection: $splitwiseRuntimeChoice) {
+                                Text("Choose").tag(SplitwiseSplitOption?.none)
+                                ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
+                                    Text(option.label).tag(SplitwiseSplitOption?.some(option))
+                                }
+                            } label: {
+                                EmptyView()
                             }
-                        } label: {
-                            Text("Split This Transaction?").foregroundStyle(.tint)
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .tint(Color.foregroundColor)
                         }
-                        .tint(.accentColor)
+                        .cardRowBackground()
                     }
 
                     if resolvedSplitwiseAction != .never {
-                        if isLoadingFriends {
-                            ProgressView()
-                        } else {
-                            Picker(selection: $selectedFriendId) {
-                                Text("None").tag(Int?.none)
-                                splitwiseFriendRows(friends) { friend in
-                                    Text(friend.fullName).tag(Optional(friend.id))
+                        DraftDetailRow(icon: "person.2.fill", title: "Split With") {
+                            if isLoadingFriends {
+                                ProgressView()
+                            } else {
+                                Picker(selection: $selectedFriendId) {
+                                    Text("None").tag(Int?.none)
+                                    splitwiseFriendRows(friends) { friend in
+                                        Text(friend.fullName).tag(Optional(friend.id))
+                                    }
+                                } label: {
+                                    EmptyView()
                                 }
-                            } label: {
-                                Text("Split With").foregroundStyle(.tint)
+                                .pickerStyle(.menu)
+                                .labelsHidden()
+                                .tint(Color.foregroundColor)
                             }
-                            .tint(.accentColor)
                         }
+                        .cardRowBackground()
                     }
 
                     if resolvedSplitwiseAction == .manual {
-                        TextField("Your Share", text: $ownShareText)
-                            .keyboardType(.decimalPad)
+                        DraftDetailRow(icon: "eurosign.circle.fill", title: "Your Share") {
+                            TextField("Your Share", text: $ownShareText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .cardRowBackground()
                     }
                 }
             }
@@ -235,20 +281,28 @@ struct ContinueYNABWalletTransactionView: View {
                 Section {
                     Text(errorMessage).foregroundStyle(.red)
                 }
+                .listRowBackground(Color.backgroundColor)
             }
-
-            Section {
-                Button {
-                    Task { await submit() }
-                } label: {
-                    if isSubmitting {
-                        ProgressView()
-                    } else {
-                        Text("Add Transaction")
-                    }
+        }
+        .themedList(background: .backgroundColor)
+        .safeAreaBar(edge: .bottom) {
+            Button {
+                Task { await submit() }
+            } label: {
+                if isSubmitting {
+                    ProgressView()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                } else {
+                    Text("Add Transaction")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .themedText()
                 }
-                .disabled(!canSubmit || isSubmitting)
             }
+            .buttonStyle(.glassProminent)
+            .foregroundStyle(Color.accentColor)
+            .disabled(!canSubmit || isSubmitting)
         }
     }
 
@@ -260,7 +314,12 @@ struct ContinueYNABWalletTransactionView: View {
         // and kick off the category/account/friend refreshes — each
         // section owns its own spinner, so nothing here should block the
         // rest of the form from being usable.
-        guard let token = await YNABAuthService.validAccessToken() else {
+        let token: String
+        if isAuthenticatedOverride == true {
+            token = "preview"
+        } else if let real = await YNABAuthService.validAccessToken() {
+            token = real
+        } else {
             notAuthenticated = true
             return
         }
@@ -440,5 +499,18 @@ struct ContinueYNABWalletTransactionView: View {
     ) async -> String? {
         guard action != .never, let friend else { return nil }
         return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare)
+    }
+}
+
+#Preview {
+    NavigationStack {
+        ContinueYNABWalletTransactionView(
+            draft: TransactionDraft(
+                id: UUID(),
+                startedAt: Date().addingTimeInterval(-3600),
+                payload: .ynabWallet(merchant: "Coffee Shop", amount: 4.50, card: "Visa")
+            ),
+            isAuthenticatedOverride: true
+        )
     }
 }

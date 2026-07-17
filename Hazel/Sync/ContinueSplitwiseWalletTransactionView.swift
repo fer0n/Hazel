@@ -53,7 +53,10 @@ struct ContinueSplitwiseWalletTransactionView: View {
     @State private var splitwiseRuntimeChoice: SplitwiseSplitOption?
     @State private var ownShareText = ""
 
-    init(draft: TransactionDraft) {
+    /// Preview/testing seam only — nil (the default) always falls through
+    /// to the real Keychain check. Lets `#Preview` render the form itself
+    /// instead of the "Not Connected" gate.
+    init(draft: TransactionDraft, isAuthenticatedOverride: Bool? = nil) {
         self.draft = draft
 
         // Resolved synchronously so the form is ready on the very first
@@ -62,7 +65,8 @@ struct ContinueSplitwiseWalletTransactionView: View {
         // be settled up front instead of behind a `.task`.
         guard case .splitwiseWallet(let merchant, _) = draft.payload else { return }
 
-        guard SplitwiseAuthService.currentAccessToken != nil else {
+        let isAuthenticated = isAuthenticatedOverride ?? (SplitwiseAuthService.currentAccessToken != nil)
+        guard isAuthenticated else {
             _notAuthenticated = State(initialValue: true)
             return
         }
@@ -114,79 +118,102 @@ struct ContinueSplitwiseWalletTransactionView: View {
                     description: Text(resultMessage)
                 )
             } else {
-                form
+                content
             }
         }
-        .navigationTitle("Continue Expense")
+        .navigationTitle("Transaction draft")
         .task { await load() }
     }
 
-    private var form: some View {
-        Form {
+    private var content: some View {
+        List {
             Section {
-                Text(draft.summary).font(.headline)
-                Text("Started \(RelativeDateTimeFormatter().localizedString(for: draft.startedAt, relativeTo: Date()))")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                TransactionDraftHeader(amount: draft.formattedAmount, merchant: draft.merchant, startedAt: draft.startedAt)
             }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.backgroundColor)
 
-            if templateResolved {
-                Section("Resolved From Template") {
-                    LabeledContent("Description", value: expenseDescription)
-                }
-            } else {
-                Section("Description") {
-                    TextField("Description", text: $expenseDescription)
-                }
-            }
-
-            Section("Split With") {
-                if templateHasFriend {
-                    LabeledContent("Friend", value: friends.first { $0.id == selectedFriendId }?.fullName ?? "Unknown")
-                } else if isLoadingFriends {
-                    ProgressView()
-                } else {
-                    Picker(selection: $selectedFriendId) {
-                        Text("None").tag(Int?.none)
-                        splitwiseFriendRows(friends) { friend in
-                            Text(friend.fullName).tag(Optional(friend.id))
-                        }
-                    } label: {
-                        Text("Friend").foregroundStyle(.tint)
+            Section {
+                DraftDetailRow(icon: "text.alignleft", title: "Description") {
+                    if templateResolved {
+                        Text(expenseDescription)
+                    } else {
+                        TextField("Description", text: $expenseDescription)
+                            .multilineTextAlignment(.trailing)
                     }
-                    .tint(.accentColor)
                 }
+                .cardRowBackground()
+
+                DraftDetailRow(icon: "doc.on.doc", title: "Template") {
+                    Text(templateResolved ? (resolvedTemplateName ?? "Unknown") : "New")
+                }
+                .cardRowBackground()
             }
 
-            Section("Splitwise") {
-                if templateResolved {
-                    LabeledContent("Split Setting", value: resolvedTemplateSplitOption.label)
-                } else {
-                    Picker(selection: $newTemplateSplitOption) {
-                        ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
-                            Text(option.label).tag(option)
+            Section("Split") {
+                DraftDetailRow(icon: "person.2.fill", title: "Split With") {
+                    if templateHasFriend {
+                        Text(friends.first { $0.id == selectedFriendId }?.fullName ?? "Unknown")
+                    } else if isLoadingFriends {
+                        ProgressView()
+                    } else {
+                        Picker(selection: $selectedFriendId) {
+                            Text("None").tag(Int?.none)
+                            splitwiseFriendRows(friends) { friend in
+                                Text(friend.fullName).tag(Optional(friend.id))
+                            }
+                        } label: {
+                            EmptyView()
                         }
-                    } label: {
-                        Text("Split").foregroundStyle(.tint)
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Color.foregroundColor)
                     }
-                    .tint(.accentColor)
                 }
+                .cardRowBackground()
+
+                DraftDetailRow(icon: "divide.circle.fill", title: "Split") {
+                    if templateResolved {
+                        Text(resolvedTemplateSplitOption.label)
+                    } else {
+                        Picker(selection: $newTemplateSplitOption) {
+                            ForEach([SplitwiseTemplateOption.ask, .always, .manual, .never], id: \.self) { option in
+                                Text(option.label).tag(option)
+                            }
+                        } label: {
+                            EmptyView()
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Color.foregroundColor)
+                    }
+                }
+                .cardRowBackground()
 
                 if effectiveSplitOption == .ask {
-                    Picker(selection: $splitwiseRuntimeChoice) {
-                        Text("Choose").tag(SplitwiseSplitOption?.none)
-                        ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
-                            Text(option.label).tag(SplitwiseSplitOption?.some(option))
+                    DraftDetailRow(icon: "questionmark.circle.fill", title: "Split Transaction?") {
+                        Picker(selection: $splitwiseRuntimeChoice) {
+                            Text("Choose").tag(SplitwiseSplitOption?.none)
+                            ForEach([SplitwiseSplitOption.always, .manual, .never], id: \.self) { option in
+                                Text(option.label).tag(SplitwiseSplitOption?.some(option))
+                            }
+                        } label: {
+                            EmptyView()
                         }
-                    } label: {
-                        Text("Split This Transaction?").foregroundStyle(.tint)
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(Color.foregroundColor)
                     }
-                    .tint(.accentColor)
+                    .cardRowBackground()
                 }
 
                 if resolvedSplitwiseAction == .manual {
-                    TextField("Your Share", text: $ownShareText)
-                        .keyboardType(.decimalPad)
+                    DraftDetailRow(icon: "eurosign.circle.fill", title: "Your Share") {
+                        TextField("Your Share", text: $ownShareText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .cardRowBackground()
                 }
             }
 
@@ -194,20 +221,28 @@ struct ContinueSplitwiseWalletTransactionView: View {
                 Section {
                     Text(errorMessage).foregroundStyle(.red)
                 }
+                .listRowBackground(Color.backgroundColor)
             }
-
-            Section {
-                Button {
-                    Task { await submit() }
-                } label: {
-                    if isSubmitting {
-                        ProgressView()
-                    } else {
-                        Text("Add Expense")
-                    }
+        }
+        .themedList(background: .backgroundColor)
+        .safeAreaBar(edge: .bottom) {
+            Button {
+                Task { await submit() }
+            } label: {
+                if isSubmitting {
+                    ProgressView()
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                } else {
+                    Text("Add Expense")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .themedText()
                 }
-                .disabled(!canSubmit || isSubmitting)
             }
+            .buttonStyle(.glassProminent)
+            .foregroundStyle(Color.accentColor)
+            .disabled(!canSubmit || isSubmitting)
         }
     }
 
@@ -336,5 +371,18 @@ struct ContinueSplitwiseWalletTransactionView: View {
         } catch {
             errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the Splitwise expense."
         }
+    }
+}
+
+#Preview {
+    NavigationStack {
+        ContinueSplitwiseWalletTransactionView(
+            draft: TransactionDraft(
+                id: UUID(),
+                startedAt: Date().addingTimeInterval(-3600),
+                payload: .splitwiseWallet(merchant: "Grocery Store", amount: 32.10)
+            ),
+            isAuthenticatedOverride: true
+        )
     }
 }

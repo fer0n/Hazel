@@ -88,7 +88,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     /// Only used when the resolved template's Splitwise option is "Ask
     /// Each Time" — the live per-transaction equivalent of the original's
     /// Ja/Manuell/Nein menu.
-    @Parameter(title: "Split This Transaction?")
+    @Parameter(title: "Split Transaction?")
     var splitwiseRuntimeChoice: SplitwiseSplitOption?
 
     /// See TransactionDraftGuard: if this run gets interrupted (a follow-up

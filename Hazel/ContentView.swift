@@ -8,12 +8,30 @@ import SwiftUI
 struct ContentView: View {
     @State private var pendingQueue = PendingOperationQueue.shared
     @State private var draftRouter = DraftNotificationRouter.shared
-    @State private var draftCount = TransactionDraftStore.load().count
+    @State private var drafts = TransactionDraftStore.load()
     @State private var splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
+    @State private var history = TransactionHistoryStore.load()
+    @State private var readdAlert: ReaddAlert?
     @State private var path: [ContentRoute] = []
     @State private var showSettings = false
     @State private var showOnboarding = false
     @Environment(\.scenePhase) private var scenePhase
+
+    private struct ReaddAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
+
+    /// Shared by every conditionally-shown row/section below so they
+    /// animate in/out together instead of just popping.
+    private static let rowTransition = AnyTransition.opacity.combined(with: .move(edge: .top))
+
+    /// Most recently started 3 drafts — "Show All" links to the full list
+    /// (TransactionDraftsView) for everything else.
+    private var topDrafts: [TransactionDraft] {
+        Array(drafts.sorted { $0.startedAt > $1.startedAt }.prefix(3))
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -29,19 +47,20 @@ struct ContentView: View {
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.backgroundColor)
+                
+                Section {
+                    NavigationLink(value: ContentRoute.templates) {
+                        RowLabel(title: "Templates", systemImage: "doc.on.doc")
+                    }
+                }
+                .cardRowBackground()
 
                 if pendingQueue.operations.count > 0 {
                     NavigationLink(value: ContentRoute.pendingQueue) {
                         RowLabel(title: "Pending Queue", systemImage: "arrow.triangle.2.circlepath", badge: pendingQueue.operations.count)
                     }
                     .cardRowBackground()
-                }
-
-                if draftCount > 0 {
-                    NavigationLink(value: ContentRoute.transactionDrafts) {
-                        RowLabel(title: "Transaction Drafts", systemImage: "square.and.pencil", badge: draftCount)
-                    }
-                    .cardRowBackground()
+                    .transition(Self.rowTransition)
                 }
 
                 if splitwiseImportCount > 0 {
@@ -49,14 +68,57 @@ struct ContentView: View {
                         RowLabel(title: "Splitwise Import", systemImage: "person.2.badge.plus", badge: splitwiseImportCount)
                     }
                     .cardRowBackground()
+                    .transition(Self.rowTransition)
+                }
+                
+                if !drafts.isEmpty {
+                    Section("Drafts") {
+                        ForEach(topDrafts) { draft in
+                            NavigationLink(value: ContentRoute.continueDraft(draft.id)) {
+                                TransactionSummaryRow(service: draft.service, date: draft.startedAt, title: draft.merchant, amount: draft.formattedAmount, showChevron: true)
+                            }
+                            .cardRowBackground()
+                            .swipeActions {
+                                Button("Dismiss", role: .destructive) {
+                                    TransactionDraftGuard.complete(draft.id)
+                                    withAnimation {
+                                        drafts.removeAll { $0.id == draft.id }
+                                    }
+                                }
+                            }
+                        }
+                        if drafts.count > topDrafts.count {
+                            NavigationLink(value: ContentRoute.transactionDrafts) {
+                                RowLabel(title: "Show All", systemImage: "square.and.pencil")
+                            }
+                            .cardRowBackground()
+                        }
+                    }
+                    .transition(Self.rowTransition)
                 }
 
-                Section {
-                    NavigationLink(value: ContentRoute.templates) {
-                        RowLabel(title: "Templates", systemImage: "doc.on.doc")
+                if !history.isEmpty {
+                    Section("Recent") {
+                        ForEach(history) { entry in
+                            TransactionSummaryRow(
+                                service: entry.service,
+                                date: entry.createdAt,
+                                title: entry.payload.title,
+                                amount: entry.payload.formattedAmount,
+                                detail: entry.payload.detail
+                            )
+                                .cardRowBackground()
+                                .contextMenu {
+                                    Button {
+                                        readd(entry)
+                                    } label: {
+                                        Label("Re-add", systemImage: "arrow.clockwise")
+                                    }
+                                }
+                        }
                     }
+                    .transition(Self.rowTransition)
                 }
-                .cardRowBackground()
             }
             .themedList(background: .backgroundColor)
             .navigationDestination(for: ContentRoute.self) { route in
@@ -91,8 +153,11 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 Task { await pendingQueue.flush() }
-                draftCount = TransactionDraftStore.load().count
-                splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
+                withAnimation {
+                    drafts = TransactionDraftStore.load()
+                    splitwiseImportCount = SplitwiseFileImportStagingStore.load()?.rows.count ?? 0
+                    history = TransactionHistoryStore.load()
+                }
             }
         }
         // A tapped draft notification always jumps straight to that draft's
@@ -131,9 +196,40 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
+        .alert(
+            readdAlert?.title ?? "",
+            isPresented: Binding(get: { readdAlert != nil }, set: { if !$0 { readdAlert = nil } }),
+            presenting: readdAlert
+        ) { _ in
+            Button("OK", role: .cancel) { }
+        } message: { alert in
+            Text(alert.message)
+        }
     }
 
     private static let hasLaunchedBeforeKey = "hasLaunchedBefore"
+
+    private func readd(_ entry: TransactionHistoryEntry) {
+        Task {
+            do {
+                let outcome = try await entry.readd()
+                withAnimation {
+                    history = TransactionHistoryStore.load()
+                }
+                if case .queued = outcome {
+                    readdAlert = ReaddAlert(
+                        title: "Queued",
+                        message: "You're offline — this will sync automatically once you're back online."
+                    )
+                }
+            } catch {
+                let message = (error as? YNABIntentError).map { String(localized: $0.localizedStringResource) }
+                    ?? (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) }
+                    ?? "Couldn't re-add the transaction."
+                readdAlert = ReaddAlert(title: "Couldn't Re-add", message: message)
+            }
+        }
+    }
 }
 
 #Preview {

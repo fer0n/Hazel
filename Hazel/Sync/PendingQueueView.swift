@@ -17,9 +17,16 @@ struct PendingQueueView: View {
     var body: some View {
         List {
             ForEach(queue.operations) { operation in
-                PendingOperationRow(operation: operation)
-                    .cardRowBackground()
-                    .swipeActions {
+                TransactionSummaryRow(
+                    service: operation.service,
+                    date: operation.queuedAt,
+                    title: operation.payload.title,
+                    amount: operation.payload.formattedAmount,
+                    detail: operation.payload.detail,
+                    errorMessage: operation.lastError
+                )
+                .cardRowBackground()
+                .swipeActions {
                         Button("Delete", role: .destructive) {
                             queue.delete(id: operation.id)
                         }

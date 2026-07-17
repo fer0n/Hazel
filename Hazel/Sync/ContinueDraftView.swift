@@ -16,6 +16,8 @@ struct ContinueDraftView: View {
 
     @State private var draft: TransactionDraft?
     @State private var isLoaded = false
+    @State private var showDeleteConfirmation = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
@@ -36,9 +38,33 @@ struct ContinueDraftView: View {
                 ProgressView()
             }
         }
+        .toolbar {
+            if draft != nil {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete this draft?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: delete)
+        }
         .task {
             draft = TransactionDraftStore.load().first { $0.id == draftId }
             isLoaded = true
         }
+    }
+
+    private func delete() {
+        guard let draft else { return }
+        TransactionDraftGuard.complete(draft.id)
+        dismiss()
     }
 }
