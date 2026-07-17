@@ -60,7 +60,7 @@ struct SettingsView: View {
                 .tint(.accentColor)
                 .cardRowBackground()
 
-                TemplateImportExportSection()
+                BackupImportExportSection()
 
                 LegacyMigrationShortcutSection(migration: migration)
 

@@ -31,6 +31,22 @@ nonisolated enum YNABCategoryUsageStore {
         try? data.write(to: fileURL, options: .atomic)
     }
 
+    /// Folds a restored-from-backup usage record into the current one,
+    /// keeping the more recent last-used date per category so restoring an
+    /// older backup can't roll a still-used category back down the picker.
+    static func merge(_ incoming: YNABCategoryUsage) {
+        var usage = load()
+        for (categoryId, date) in incoming.lastUsedByCategoryId {
+            if let existing = usage.lastUsedByCategoryId[categoryId] {
+                usage.lastUsedByCategoryId[categoryId] = max(existing, date)
+            } else {
+                usage.lastUsedByCategoryId[categoryId] = date
+            }
+        }
+        guard let data = try? JSONEncoder().encode(usage) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
     static func sorted(_ categories: [YNABCategory]) -> [YNABCategory] {
         UsageStore.sorted(categories, lastUsed: load().lastUsedByCategoryId, key: \.id)
     }

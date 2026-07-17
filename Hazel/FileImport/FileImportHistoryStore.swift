@@ -56,4 +56,20 @@ nonisolated enum FileImportHistoryStore {
         guard let data = try? JSONEncoder().encode(history) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
+
+    /// Unions a restored-from-backup history into the current one — ids are
+    /// already destination-namespaced, so appending only the not-yet-present
+    /// ones and trimming to `recentLimit` keeps the same dedup guarantee as
+    /// `record`.
+    static func merge(_ incoming: FileImportHistory) {
+        var history = load()
+        for id in incoming.recentIds where !history.recentIds.contains(id) {
+            history.recentIds.append(id)
+        }
+        if history.recentIds.count > recentLimit {
+            history.recentIds.removeFirst(history.recentIds.count - recentLimit)
+        }
+        guard let data = try? JSONEncoder().encode(history) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
 }

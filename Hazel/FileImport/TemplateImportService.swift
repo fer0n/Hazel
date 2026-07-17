@@ -31,11 +31,23 @@ enum TemplateImportService {
 
     static func importBuckets(from data: Data) async -> Result<String, TemplateImportError> {
         do {
-            // Tries Hazel's own export shape first (a full WalletTransactionConfig
-            // — no field translation needed), and only falls back to the legacy
-            // bucket shape if that fails to decode. The two are structurally
-            // distinct (different field names on `merchants`), so this never
-            // misidentifies one as the other.
+            // Tried newest-format-first. A full backup (BackupData) must come
+            // before the bare WalletTransactionConfig probe: BackupData is the
+            // only shape carrying `formatVersion`, whereas WalletTransactionConfig's
+            // fields all default, so a backup handed to the config decoder
+            // would decode as an empty config and silently import nothing.
+            if let backup = BackupService.decodeBackup(from: data) {
+                let result = try BackupService.restore(backup)
+                logger.log("imported full backup v\(backup.formatVersion, privacy: .public)")
+                return .success(BackupService.summary(for: result))
+            }
+
+            // Then Hazel's older template-only export shape (a full
+            // WalletTransactionConfig — no field translation needed), and
+            // only falling back to the legacy bucket shape if that fails to
+            // decode. The two are structurally distinct (different field
+            // names on `merchants`), so this never misidentifies one as the
+            // other.
             if let nativeConfig = try? JSONDecoder().decode(WalletTransactionConfig.self, from: data) {
                 var config = WalletTransactionConfigStore.load()
                 let result = BucketImporter.mergeNative(nativeConfig, into: &config)

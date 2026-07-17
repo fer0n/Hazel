@@ -2,14 +2,16 @@
 //  TemplateImportExportSections.swift
 //  Hazel
 //
-//  Settings' template import/export section, plus the legacy "YNAB Toolkit →
-//  Hazel" Shortcut migration section.
+//  Settings' backup import/export section, plus the legacy "YNAB Toolkit →
+//  Hazel" Shortcut migration section. Export writes a full BackupData; import
+//  goes through TemplateImportService, which also still accepts the older
+//  template-only exports and the legacy bucket file.
 //
 
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct TemplateImportExportSection: View {
+struct BackupImportExportSection: View {
     @State private var showFileImporter = false
     @State private var isImporting = false
     @State private var importResultMessage: String?
@@ -22,12 +24,12 @@ struct TemplateImportExportSection: View {
 
     var body: some View {
         Section {
-            Button("Import Templates") {
+            Button("Import Backup") {
                 showFileImporter = true
             }
             .disabled(isImporting)
 
-            Button("Export Templates") {
+            Button("Export Backup") {
                 export()
             }
 
@@ -55,7 +57,7 @@ struct TemplateImportExportSection: View {
                     .foregroundStyle(.red)
             }
         } footer: {
-            Text("Export your templates, auto-match rules, merchants, and cards as a JSON backup, or import one back in.")
+            Text("Export your templates, auto-match rules, merchants, cards, import settings, and preferences as a JSON backup, or restore one. Account logins aren't included — you'll reconnect YNAB and Splitwise after restoring.")
                 .footerText()
         }
         .cardRowBackground()
@@ -72,7 +74,7 @@ struct TemplateImportExportSection: View {
             isPresented: $showExporter,
             document: document,
             contentType: .json,
-            defaultFilename: "Hazel Templates"
+            defaultFilename: "Hazel Backup"
         ) { result in
             switch result {
             case .success:
@@ -102,14 +104,8 @@ struct TemplateImportExportSection: View {
     private func export() {
         exportResultMessage = nil
         exportErrorMessage = nil
-        let config = WalletTransactionConfigStore.load()
-        let encoder = JSONEncoder()
-        // Human-readable and byte-stable across exports of unchanged data —
-        // this is a backup file a user might open/diff by hand, not a wire
-        // format, so there's no cost to spending the extra whitespace.
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(config) else {
-            exportErrorMessage = "Failed to export: couldn't encode templates."
+        guard let data = try? BackupService.exportData() else {
+            exportErrorMessage = "Failed to export: couldn't encode backup."
             return
         }
         document = JSONFileDocument(data: data)
