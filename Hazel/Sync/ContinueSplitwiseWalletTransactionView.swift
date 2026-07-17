@@ -187,22 +187,13 @@ struct ContinueSplitwiseWalletTransactionView: View {
         }
         .themedList(background: .backgroundColor)
         .safeAreaBar(edge: .bottom) {
-            Button {
+            BottomBarActionButton(
+                title: "Add Expense",
+                isLoading: isSubmitting,
+                isDisabled: !canSubmit || isSubmitting
+            ) {
                 Task { await submit() }
-            } label: {
-                if isSubmitting {
-                    ProgressView()
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                } else {
-                    Text("Add Expense")
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .themedText()
-                }
             }
-            .glassProminentActionButton()
-            .disabled(!canSubmit || isSubmitting)
         }
     }
 
@@ -305,17 +296,12 @@ struct ContinueSplitwiseWalletTransactionView: View {
 
         var ownShare: Double?
         if action == .manual {
-            guard let parsed = Double(ownShareText) else {
-                errorMessage = "Enter a valid share amount."
+            switch SplitwiseExpenseHelper.parseOwnShare(ownShareText, amount: amount) {
+            case .valid(let parsed): ownShare = parsed
+            case .invalid(let message):
+                errorMessage = message
                 return
             }
-            do {
-                try SplitwiseExpenseHelper.validateOwnShare(parsed, amount: amount)
-            } catch {
-                errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Invalid share amount."
-                return
-            }
-            ownShare = parsed
         }
 
         do {
@@ -328,7 +314,7 @@ struct ContinueSplitwiseWalletTransactionView: View {
             TransactionDraftGuard.complete(draft.id)
             dismiss()
         } catch {
-            errorMessage = (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) } ?? "Couldn't add the Splitwise expense."
+            errorMessage = SplitwiseIntentError.message(for: error)
         }
     }
 }

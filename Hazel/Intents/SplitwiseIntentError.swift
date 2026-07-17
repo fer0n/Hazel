@@ -51,4 +51,13 @@ nonisolated enum SplitwiseIntentError: Error, CustomLocalizedStringResourceConve
             return .requestFailed
         }
     }
+
+    /// A user-facing message for any error thrown out of a Splitwise call: an
+    /// already-typed intent error is kept as-is, anything else is mapped via
+    /// `from(_:)` (which strips the token and points auth failures at
+    /// re-auth). Collapses the `(error as? Self) ?? .from(error)` +
+    /// `String(localized:)` dance the call sites would otherwise each repeat.
+    static func message(for error: Error) -> String {
+        String(localized: ((error as? SplitwiseIntentError) ?? from(error)).localizedStringResource)
+    }
 }

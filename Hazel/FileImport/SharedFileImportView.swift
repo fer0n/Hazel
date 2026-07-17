@@ -407,26 +407,17 @@ struct SharedFileImportView: View {
             }
         }
         .safeAreaBar(edge: .bottom) {
-            Button {
+            BottomBarActionButton(
+                title: bottomButtonLabel,
+                isLoading: isParsing || isSubmitting || (staging == nil && !isDone),
+                isDisabled: bottomButtonDisabled
+            ) {
                 if isDone {
                     onDone()
                 } else if staging != nil {
                     Task { await submit() }
                 }
-            } label: {
-                if isParsing || isSubmitting || (staging == nil && !isDone) {
-                    ProgressView()
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                } else {
-                    Text(bottomButtonLabel)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .themedText()
-                }
             }
-            .glassProminentActionButton()
-            .disabled(bottomButtonDisabled)
         }
     }
 
@@ -612,8 +603,8 @@ struct SharedFileImportView: View {
             return
         } catch {
             errorMessage = destination == .splitwise
-                ? String(localized: SplitwiseIntentError.from(error).localizedStringResource)
-                : String(localized: YNABIntentError.from(error).localizedStringResource)
+                ? SplitwiseIntentError.message(for: error)
+                : YNABIntentError.message(for: error)
             return
         }
 
@@ -739,7 +730,7 @@ struct SharedFileImportView: View {
             removeRows(ids: Set(selectedRows.map(\.id)))
         } catch {
             totalFailed += selectedRows.count
-            errorMessage = String(localized: YNABIntentError.from(error).localizedStringResource)
+            errorMessage = YNABIntentError.message(for: error)
         }
     }
 

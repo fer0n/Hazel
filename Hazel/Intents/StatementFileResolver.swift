@@ -30,6 +30,49 @@ nonisolated enum StatementFileResolver {
     typealias ColumnAsk = (_ candidates: [StatementColumnEntity], _ dialog: String) async throws -> StatementColumnEntity
     typealias DateFormatAsk = (_ candidates: [DateFormatEntity], _ dialog: String) async throws -> DateFormatEntity
 
+    /// Convenience for the two statement-import intents, which both wire the
+    /// same five interactive `@Parameter` fields to `resolveRows` in exactly
+    /// the same way: use the parameter's value if the automation pre-set one,
+    /// else ask live via `requestDisambiguation`. Callers pass the projected
+    /// values (`$dateColumn`, …) — `IntentParameter` is a reference type, so
+    /// the ask closures built here stay bound to the running intent. This is
+    /// the only place that closure boilerplate lives now, instead of a
+    /// byte-for-byte copy in each intent's `perform()`.
+    static func resolveRows(
+        file: some StatementFileSource,
+        config: inout FileImportConfig,
+        dateColumn: IntentParameter<StatementColumnEntity?>,
+        payeeColumn: IntentParameter<StatementColumnEntity?>,
+        memoColumn: IntentParameter<StatementColumnEntity?>,
+        amountColumn: IntentParameter<StatementColumnEntity?>,
+        dateFormat: IntentParameter<DateFormatEntity?>
+    ) async throws -> [ImportedStatementRow] {
+        try await resolveRows(
+            file: file,
+            config: &config,
+            askDateColumn: { candidates, dialog in
+                if let value = dateColumn.wrappedValue { return value }
+                return try await dateColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
+            },
+            askPayeeColumn: { candidates, dialog in
+                if let value = payeeColumn.wrappedValue { return value }
+                return try await payeeColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
+            },
+            askMemoColumn: { candidates, dialog in
+                if let value = memoColumn.wrappedValue { return value }
+                return try await memoColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
+            },
+            askAmountColumn: { candidates, dialog in
+                if let value = amountColumn.wrappedValue { return value }
+                return try await amountColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
+            },
+            askDateFormat: { candidates, dialog in
+                if let value = dateFormat.wrappedValue { return value }
+                return try await dateFormat.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
+            }
+        )
+    }
+
     static func resolveRows(
         file: some StatementFileSource,
         config: inout FileImportConfig,

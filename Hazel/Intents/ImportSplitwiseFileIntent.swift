@@ -69,26 +69,11 @@ nonisolated struct ImportSplitwiseFileIntent: AppIntent {
             rows = try await StatementFileResolver.resolveRows(
                 file: file,
                 config: &config,
-                askDateColumn: { candidates, dialog in
-                    if let dateColumn { return dateColumn }
-                    return try await $dateColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
-                },
-                askPayeeColumn: { candidates, dialog in
-                    if let payeeColumn { return payeeColumn }
-                    return try await $payeeColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
-                },
-                askMemoColumn: { candidates, dialog in
-                    if let memoColumn { return memoColumn }
-                    return try await $memoColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
-                },
-                askAmountColumn: { candidates, dialog in
-                    if let amountColumn { return amountColumn }
-                    return try await $amountColumn.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
-                },
-                askDateFormat: { candidates, dialog in
-                    if let dateFormat { return dateFormat }
-                    return try await $dateFormat.requestDisambiguation(among: candidates, dialog: IntentDialog(stringLiteral: dialog))
-                }
+                dateColumn: $dateColumn,
+                payeeColumn: $payeeColumn,
+                memoColumn: $memoColumn,
+                amountColumn: $amountColumn,
+                dateFormat: $dateFormat
             )
         } catch {
             throw SplitwiseIntentError.from(error)

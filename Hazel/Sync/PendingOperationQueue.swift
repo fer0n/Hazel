@@ -138,18 +138,14 @@ final class PendingOperationQueue {
         }
     }
 
-    /// `error` here can already be a YNABIntentError/SplitwiseIntentError
-    /// (thrown directly above for the "no token" case) — re-mapping those
-    /// through `.from(_:)` would lose the specific reason, since `.from`
-    /// only pattern-matches the raw API error types.
+    /// `message(for:)` keeps an already-typed YNABIntentError/SplitwiseIntentError
+    /// as-is (thrown directly above for the "no token" case) rather than
+    /// re-mapping it through `.from(_:)`, which would lose the specific
+    /// reason since `.from` only pattern-matches the raw API error types.
     private func describe(_ error: Error, for payload: PendingOperation.Payload) -> String {
         switch payload {
-        case .ynabTransaction:
-            let intentError = (error as? YNABIntentError) ?? YNABIntentError.from(error)
-            return String(localized: intentError.localizedStringResource)
-        case .splitwiseExpense:
-            let intentError = (error as? SplitwiseIntentError) ?? SplitwiseIntentError.from(error)
-            return String(localized: intentError.localizedStringResource)
+        case .ynabTransaction: YNABIntentError.message(for: error)
+        case .splitwiseExpense: SplitwiseIntentError.message(for: error)
         }
     }
 

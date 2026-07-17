@@ -158,6 +158,34 @@ struct InlineAlertCard: View {
     }
 }
 
+/// Prominent Liquid Glass action button pinned to the bottom safe area
+/// (Save / Import / Add Expense / Add Transaction). Shows a spinner in
+/// place of the label while `isLoading`, and applies the shared padding,
+/// themed text, and glass styling every bottom bar uses — so the four
+/// `safeAreaBar(edge: .bottom)` call sites don't each re-spell it.
+struct BottomBarActionButton: View {
+    let title: String
+    var isLoading = false
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Text(title).themedText()
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+        }
+        .glassProminentActionButton()
+        .disabled(isDisabled)
+    }
+}
+
 extension View {
     /// The card-style row background used throughout themed Lists.
     func cardRowBackground() -> some View {

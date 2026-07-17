@@ -11,6 +11,11 @@
 
 import Foundation
 
+enum SplitwiseOwnShareParse {
+    case valid(Double)
+    case invalid(message: String)
+}
+
 enum SplitwiseExpenseOutcome {
     case created(shareSummary: String)
     /// Offline — the expense was handed to PendingOperationQueue and will
@@ -28,6 +33,24 @@ nonisolated enum SplitwiseExpenseHelper {
         guard ownShare.isFinite, (0...amount).contains(ownShare) else {
             throw SplitwiseIntentError.validation("Your share must be between 0 and the total amount.")
         }
+    }
+
+    /// Parses a manual own-share string entered in a form and validates it
+    /// against the total, returning either the amount or a user-facing error
+    /// message. Shared by the in-app "Continue…" draft forms, which both
+    /// need the same "parse then validate, else show why" step before submit.
+    static func parseOwnShare(_ text: String, amount: Double) -> SplitwiseOwnShareParse {
+        guard let parsed = Double(text) else {
+            return .invalid(message: "Enter a valid share amount.")
+        }
+        do {
+            try validateOwnShare(parsed, amount: amount)
+        } catch {
+            let message = (error as? SplitwiseIntentError)
+                .map { String(localized: $0.localizedStringResource) } ?? "Invalid share amount."
+            return .invalid(message: message)
+        }
+        return .valid(parsed)
     }
 
     /// Creates a non-group Splitwise expense split between the signed-in

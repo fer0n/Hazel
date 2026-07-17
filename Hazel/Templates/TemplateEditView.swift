@@ -214,14 +214,11 @@ struct TemplateEditView: View {
         }
         .safeAreaBar(edge: .bottom) {
             if hasChanges {
-                Button(action: save) {
-                    Text("Save")
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .themedText()
-                }
-                .glassProminentActionButton()
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                BottomBarActionButton(
+                    title: "Save",
+                    isDisabled: name.trimmingCharacters(in: .whitespaces).isEmpty,
+                    action: save
+                )
             }
         }
         .task {
