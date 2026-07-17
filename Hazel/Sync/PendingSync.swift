@@ -25,6 +25,7 @@ nonisolated enum PendingSync {
     ) async throws -> PendingSyncOutcome {
         do {
             try await retryOnConnectivityFailure { try await YNABService.createTransaction(transaction, token: token) }
+            TransactionHistoryStore.record(summary: summary, payload: .ynabTransaction(transaction))
             return .created
         } catch {
             guard error.isConnectivityFailure else { throw YNABIntentError.from(error) }
@@ -40,6 +41,7 @@ nonisolated enum PendingSync {
     ) async throws -> PendingSyncOutcome {
         do {
             try await retryOnConnectivityFailure { try await SplitwiseService.createExpense(expense, token: token) }
+            TransactionHistoryStore.record(summary: summary, payload: .splitwiseExpense(expense))
             return .created
         } catch {
             guard error.isConnectivityFailure else { throw SplitwiseIntentError.from(error) }

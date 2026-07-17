@@ -125,6 +125,7 @@ final class PendingOperationQueue {
                 try await SplitwiseService.createExpense(expense, token: token)
                 SplitwiseFriendUsageStore.recordUsage(friendId: expense.friendUserId)
             }
+            TransactionHistoryStore.record(summary: operation.summary, payload: operation.payload)
             logger.log("synced queued operation: \(operation.summary, privacy: .public)")
             return .success
         } catch {
