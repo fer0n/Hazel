@@ -36,7 +36,7 @@ struct HowRelayWorksView: View {
             InfoSection(
                 icon: "arrow.triangle.2.circlepath",
                 title: "Sign-In Relay",
-                text: "Part of the sign-in process briefly passes through a small relay service run by Relay's developer. It's only ever involved for a moment while you're signing in, and never sees your budget, transactions, or expenses."
+                text: "Part of the sign-in process briefly passes through a small relay service run by Relay's developer. It's only ever involved for a moment while you're signing in, and never sees your plan, transactions, or expenses."
             )
 
             InfoSection(

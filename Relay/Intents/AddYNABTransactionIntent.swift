@@ -18,7 +18,7 @@ import AppIntents
 
 nonisolated struct AddYNABTransactionIntent: AppIntent {
     static let title: LocalizedStringResource = "Add YNAB Transaction"
-    static let description = IntentDescription("Adds an expense transaction to your YNAB budget.")
+    static let description = IntentDescription("Adds an expense transaction to your YNAB plan.")
 
     @Parameter(title: "Amount", description: "The expense amount, e.g. 12.34")
     var amount: Double

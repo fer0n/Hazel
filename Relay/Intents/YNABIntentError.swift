@@ -18,7 +18,7 @@ nonisolated enum YNABIntentError: Error, CustomLocalizedStringResourceConvertibl
         case .notAuthenticated:
             return "Open Relay and connect your YNAB account first."
         case .noDefaultBudget:
-            return "No default YNAB budget is set for this account. Reconnect YNAB in Relay and choose a default budget when prompted."
+            return "No default YNAB plan is set for this account. Reconnect YNAB in Relay and choose a default plan when prompted."
         case .rateLimited:
             return "YNAB is rate-limiting requests right now. Try again in a few minutes."
         case .requestFailed:
