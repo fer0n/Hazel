@@ -4,7 +4,7 @@ title: Relay Privacy Policy
 
 # Privacy Policy for Relay
 
-**Last updated:** July 15, 2026
+**Last updated:** July 18, 2026
 
 Relay is a personal-finance utility that connects to your own YNAB and/or
 Splitwise account to add transactions and import bank statement files.
@@ -12,7 +12,7 @@ Each installation only ever accesses the YNAB/Splitwise account you
 connect it to — your tokens and data are never visible to, or shared
 with, any other user of the app.
 
-## Data we access
+## Data Relay accesses
 
 When you connect YNAB and/or Splitwise, Relay requests OAuth access to:
 
@@ -29,37 +29,27 @@ to extract transaction data for import into YNAB.
 - OAuth access tokens (and, where issued, refresh tokens) are stored only in
   the device's Keychain, protected by the operating system, and are used
   only to call YNAB's or Splitwise's own APIs directly over HTTPS.
-- Signing in (and silently refreshing an expired token) passes through a
-  small relay service Relay's developer runs on Cloudflare Workers, whose
-  only job is to complete the OAuth token exchange with YNAB/Splitwise
-  using a credential that can't safely be stored in the app itself. It
-  does not store anything — it relays the exchange and forgets it — and it
-  never sees your budget, transaction, or expense data, only the
-  short-lived codes/tokens involved in signing in.
-- Beyond that relay, Relay has no backend server. There is no database,
-  analytics service, or third party that receives your financial data —
-  data obtained through the YNAB API or the Splitwise API is not knowingly
-  passed to any third party.
+- Signing in (and refreshing an expired token) passes through a small relay
+  service whose only job is to complete the OAuth token exchange using a
+  credential that can't safely live in the app. It stores nothing and never
+  sees your budget, transaction, or expense data — only the short-lived
+  sign-in codes/tokens. Relay has no other backend: no database, no
+  analytics, no third party receives data obtained through the YNAB or
+  Splitwise API.
 - Imported statement files are read locally on-device to build transactions
   for YNAB; Relay does not upload or retain copies of these files beyond
   what's needed to complete the import.
 - If a transaction or expense can't be sent because the device is offline,
-  Relay stores it in local on-device storage (amount, payee/description,
-  category, and which friend it's split with) and retries automatically the
-  next time the app is opened or a Shortcut runs. This "Pending Queue" is
-  visible in the app, and never leaves the device or is sent anywhere other
-  than YNAB's or Splitwise's own APIs once it syncs.
+  Relay stores it on-device (amount, payee/description, category, and which
+  friend it's split with) and retries automatically the next time the app is
+  opened or a Shortcut runs. This "Pending Queue" is visible in the app and
+  goes nowhere but YNAB's or Splitwise's own APIs once it syncs.
 - The wallet automations' "Ensure Completion" option (on by default) briefly
-  stores what that run was given (amount, merchant name, and — for YNAB —
-  the card label) locally, and requests permission to send you a local
-  notification if the run is interrupted before finishing — since there's
-  no way for Relay to resume a Shortcuts run that was cut off partway
-  through. That notification is generated and delivered entirely on-device;
-  nothing about it is sent anywhere. Tapping it (or a matching entry in the
-  app's "Transaction Drafts" screen) opens Relay to finish creating that
-  transaction/expense using the same YNAB/Splitwise API calls as normal.
-  The stored draft is deleted as soon as the transaction completes (or you
-  dismiss it yourself).
+  stores what a run was given (amount, merchant name, and — for YNAB — the
+  card label) on-device as a "Transaction Draft" so an interrupted run can
+  be finished later, and may deliver an on-device local notification to
+  remind you. This data and notification never leave the device, and the
+  draft is deleted as soon as the transaction completes or you dismiss it.
 
 ## Retention
 
@@ -68,7 +58,7 @@ Relay or delete the app, at which point they are removed. Relay does not
 retain transaction or budget data outside of what YNAB and Splitwise
 themselves store, other than the Pending Queue and Transaction Drafts
 above, each of which is deleted as soon as it's resolved (synced,
-completed, or removed by you).
+completed, or removed by the user).
 
 ## Deleting your data
 
@@ -79,10 +69,8 @@ completed, or removed by you).
 
 ## Changes to this policy
 
-If this policy changes in a way that affects how your data is used, you
-will be asked to re-authorize before continuing to use the affected
-integration. The "Last updated" date above reflects the most recent
-revision.
+Any changes to this policy will be published here, with the "Last updated"
+date above revised to reflect the most recent revision.
 
 ## Contact
 
