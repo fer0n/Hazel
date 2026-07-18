@@ -402,12 +402,12 @@ extension TemplateEditView {
 }
 #endif
 
-#Preview {
-    NavigationStack {
-        TemplateEditView(previewAutoMatchRules: [
-            .init(pattern: "STARBUCKS", payeeName: "Starbucks"),
-            .init(pattern: "(?i)uber( eats)?", payeeName: "Uber Eats"),
-            .init(pattern: "TRADER JOE'?S", payeeName: "Trader Joe's")
-        ])
-    }
-}
+//#Preview {
+//    NavigationStack {
+//        TemplateEditView(previewAutoMatchRules: [
+//            .init(pattern: "STARBUCKS", payeeName: "Starbucks"),
+//            .init(pattern: "(?i)uber( eats)?", payeeName: "Uber Eats"),
+//            .init(pattern: "TRADER JOE'?S", payeeName: "Trader Joe's")
+//        ])
+//    }
+//}
