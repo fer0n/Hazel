@@ -15,6 +15,13 @@ struct AutomationTutorialView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var page: TutorialPage = .step1
+    @State private var direction: PageDirection = .forward
+    @Namespace private var imageNamespace
+
+    private enum PageDirection {
+        case forward
+        case backward
+    }
 
     private enum TutorialPage: Int, CaseIterable, Hashable, Sendable {
         case step1
@@ -55,11 +62,11 @@ struct AutomationTutorialView: View {
             case .step3:
                 return "Select all cards & categories on the next screen. Then, tap \"Create New Shortcut\"."
             case .step4:
-                return "Search actions for \"Add Wallet Transaction to YNAB\". Tap on \"Amount\" and scroll the keyboard extension to the right. Select \"Shortcut Input\"."
+                return "Search actions for \"Add Wallet Transaction to YNAB\" (YNAB, optionally split with Splitwise) or \"Add Wallet Transaction to Splitwise\" (Splitwise only). Tap \"Amount\", scroll right, then select \"Shortcut Input\"."
             case .step5:
                 return "Tap on \"Shortcut Input\" on top, then select \"Amount\"."
             case .step6:
-                return "Repeat the same input mapping for Merchant and Card. Confirm the action looks correct, then tap the checkmark to save the automation."
+                return "Repeat for Merchant (and Card, YNAB action only). Confirm it looks right, then tap the checkmark to save."
             case .step7:
                 return "Next time you pay with Apple Pay on your phone, Relay will run automatically and add the transaction or prompt you with any necessary actions."
             }
@@ -87,25 +94,12 @@ struct AutomationTutorialView: View {
             ZStack {
                 tutorialVisual
                     .id(page)
+                    .matchedGeometryEffect(id: "tutorialImage", in: imageNamespace)
                     .transition(.opacity)
             }
             .padding(24)
             .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 20)
-                    .onEnded { value in
-                        let horizontal = value.translation.width
-                        guard abs(horizontal) > abs(value.translation.height), abs(horizontal) > 44 else {
-                            return
-                        }
-                        if horizontal < 0 {
-                            advancePage()
-                        } else {
-                            retreatPage()
-                        }
-                    }
-            )
+            .clipped()
             .animation(.easeInOut(duration: 0.25), value: page)
 
             VStack(spacing: 16) {
@@ -113,14 +107,20 @@ struct AutomationTutorialView: View {
                     .font(.title2)
                     .fontWeight(.bold)
                     .id(page)
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: direction == .forward ? .trailing : .leading).combined(with: .opacity),
+                        removal: .move(edge: direction == .forward ? .leading : .trailing).combined(with: .opacity)
+                    ))
 
                 Text(page.description)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .id(page)
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: direction == .forward ? .trailing : .leading).combined(with: .opacity),
+                        removal: .move(edge: direction == .forward ? .leading : .trailing).combined(with: .opacity)
+                    ))
 
                 HStack(spacing: 6) {
                     ForEach(TutorialPage.allCases, id: \.self) { candidate in
@@ -159,6 +159,21 @@ struct AutomationTutorialView: View {
             .frame(maxWidth: .infinity)
             .animation(.easeInOut(duration: 0.2), value: page)
         }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { value in
+                    let horizontal = value.translation.width
+                    guard abs(horizontal) > abs(value.translation.height), abs(horizontal) > 44 else {
+                        return
+                    }
+                    if horizontal < 0 {
+                        advancePage()
+                    } else {
+                        retreatPage()
+                    }
+                }
+        )
         .background(Color.sheetBackgroundColor)
     }
 
@@ -182,11 +197,13 @@ struct AutomationTutorialView: View {
 
     private func advancePage() {
         guard let next = page.next else { return }
+        direction = .forward
         withAnimation { page = next }
     }
 
     private func retreatPage() {
         guard let previous = page.previous else { return }
+        direction = .backward
         withAnimation { page = previous }
     }
 }
