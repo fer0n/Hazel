@@ -35,6 +35,28 @@ struct OnboardingWelcomePage: View {
             .cardRowBackground()
         }
         .themedList(background: .sheetBackgroundColor)
+        .alert(
+            "Couldn't Connect to YNAB",
+            isPresented: Binding(
+                get: { ynabAuth.signInError != nil },
+                set: { if !$0 { ynabAuth.clearSignInError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(ynabAuth.signInError ?? "")
+        }
+        .alert(
+            "Couldn't Connect to Splitwise",
+            isPresented: Binding(
+                get: { splitwiseAuth.signInError != nil },
+                set: { if !$0 { splitwiseAuth.clearSignInError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(splitwiseAuth.signInError ?? "")
+        }
     }
 }
 

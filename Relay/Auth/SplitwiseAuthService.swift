@@ -15,11 +15,18 @@
 import AuthenticationServices
 import Foundation
 import Observation
+import os
+
+private let logger = Logger(subsystem: "com.pentlandFirth.Relay", category: "SplitwiseAuthService")
 
 @MainActor
 @Observable
 final class SplitwiseAuthService {
     private(set) var accessToken: String?
+    /// Set when the interactive sign-in's token exchange fails, so the view
+    /// showing the Connect button can surface it — otherwise the flow looks
+    /// like it did nothing (the web sign-in page closes either way).
+    private(set) var signInError: String?
     private var session: ASWebAuthenticationSession?
     private let presentationContextProvider = AuthPresentationContextProvider()
 
@@ -53,7 +60,12 @@ final class SplitwiseAuthService {
         accessToken = KeychainStore.load(for: Self.accessTokenKey)
     }
 
+    func clearSignInError() {
+        signInError = nil
+    }
+
     func signIn() {
+        signInError = nil
         var components = URLComponents(string: "https://secure.splitwise.com/oauth/authorize")!
         components.queryItems = [
             URLQueryItem(name: "client_id", value: OAuthConfig.splitwiseClientID),
@@ -101,8 +113,16 @@ final class SplitwiseAuthService {
             // offline template creation works.
             Task { _ = try? await SplitwiseFriendCacheStore.fetch(token: token.accessToken) }
         } catch {
-            print("Splitwise token exchange failed: \(error)")
+            logger.error("token exchange failed: \(String(describing: error), privacy: .public)")
+            signInError = Self.signInErrorMessage(for: error)
         }
+    }
+
+    private static func signInErrorMessage(for error: Error) -> String {
+        if error is URLError {
+            return "Couldn't reach the sign-in service. Check your internet connection and try again."
+        }
+        return "Something went wrong while connecting to Splitwise. Please try again."
     }
 
     func signOut() {
