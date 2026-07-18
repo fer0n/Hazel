@@ -27,6 +27,9 @@ final class SplitwiseAuthService {
     /// showing the Connect button can surface it — otherwise the flow looks
     /// like it did nothing (the web sign-in page closes either way).
     private(set) var signInError: String?
+    /// Raw error text for the "Report Error" mail action — `signInError`
+    /// itself stays a friendly, generic message.
+    private(set) var signInErrorDetail: String?
     private var session: ASWebAuthenticationSession?
     private let presentationContextProvider = AuthPresentationContextProvider()
 
@@ -62,6 +65,7 @@ final class SplitwiseAuthService {
 
     func clearSignInError() {
         signInError = nil
+        signInErrorDetail = nil
     }
 
     func signIn() {
@@ -115,6 +119,7 @@ final class SplitwiseAuthService {
         } catch {
             logger.error("token exchange failed: \(String(describing: error), privacy: .public)")
             signInError = Self.signInErrorMessage(for: error)
+            signInErrorDetail = String(describing: error)
         }
     }
 

@@ -105,6 +105,13 @@ struct SettingsView: View {
                     set: { if !$0 { ynabAuth.clearSignInError() } }
                 )
             ) {
+                Button("Report Error") {
+                    openURL(SignInErrorMail.reportURL(
+                        service: "YNAB",
+                        message: ynabAuth.signInError ?? "",
+                        detail: ynabAuth.signInErrorDetail
+                    ))
+                }
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(ynabAuth.signInError ?? "")
@@ -116,6 +123,13 @@ struct SettingsView: View {
                     set: { if !$0 { splitwiseAuth.clearSignInError() } }
                 )
             ) {
+                Button("Report Error") {
+                    openURL(SignInErrorMail.reportURL(
+                        service: "Splitwise",
+                        message: splitwiseAuth.signInError ?? "",
+                        detail: splitwiseAuth.signInErrorDetail
+                    ))
+                }
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(splitwiseAuth.signInError ?? "")
