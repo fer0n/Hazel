@@ -2,13 +2,15 @@
 //  WalletDraftCompletion.swift
 //  Relay
 //
-//  Answers the optional "split with Splitwise?" question from a notification
-//  action, in the background, without opening the app. By the time this runs
-//  the YNAB transaction has already been committed (see
-//  AddWalletTransactionToYNABIntent — YNAB is sent as soon as it's fully
-//  resolved, before the split is ever asked), so this only ever does the
-//  Splitwise half, via the same SplitwiseExpenseHelper / WalletAutomationDialog
-//  path the intent and ContinueSplitwiseWalletTransactionView use.
+//  Answers the "split with Splitwise?" question from a notification action,
+//  in the background, without opening the app. Always does just the Splitwise
+//  half, via the same SplitwiseExpenseHelper / WalletAutomationDialog path the
+//  intents and ContinueSplitwiseWalletTransactionView use. Both wallet
+//  automations arm this: for the YNAB one the YNAB transaction is already
+//  committed by the time the split is asked, so this finishes an optional
+//  side-split; for the standalone Splitwise one the expense *is* the split,
+//  so this creates the whole transaction (and Don't Split resolves it to
+//  nothing, matching the intent's own skip).
 //
 //  Only called for a `.splitwiseWallet` draft carrying a PendingSplitContext,
 //  i.e. one armed at the split question with its description + friend already

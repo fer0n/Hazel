@@ -264,6 +264,18 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                 changed = true
             }
 
+            // Persist the resolved template/friend/merchant mappings before
+            // the (interruptible) split question, so they're remembered even
+            // when this run is finished from the notification instead of here.
+            if changed {
+                do {
+                    try WalletTransactionConfigStore.save(config)
+                    logger.log("config saved")
+                } catch {
+                    logger.error("failed to save config: \(String(describing: error), privacy: .public)")
+                }
+            }
+
             let splitwiseAction: SplitwiseSplitOption
             switch splitOption {
             case .never:
@@ -277,17 +289,26 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     splitwiseAction = splitwiseRuntimeChoice
                 } else {
                     logger.log("splitOption=ask — requesting runtime choice")
+                    // Description + friend are already resolved, so an
+                    // interruption at this question can be answered straight
+                    // from the reminder — arm the Split Equally / Manually /
+                    // Don't Split actions. Unlike the YNAB automation nothing
+                    // is committed ahead of the split (the expense *is* the
+                    // split), so a dismiss defers (the draft stays) rather than
+                    // completing; Don't Split resolves it with no expense.
+                    if let draftId {
+                        TransactionDraftGuard.armSplitChoice(draftId, context: TransactionDraft.PendingSplitContext(
+                            description: expenseDescription,
+                            friendId: friendId,
+                            friendFirstName: friendFirstName,
+                            friendFullName: friendFullName
+                        ))
+                    }
                     splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(expenseDescription) transaction with Splitwise?")
+                    if let draftId {
+                        TransactionDraftGuard.disarmSplitChoice(draftId)
+                    }
                     touchDraft()
-                }
-            }
-
-            if changed {
-                do {
-                    try WalletTransactionConfigStore.save(config)
-                    logger.log("config saved")
-                } catch {
-                    logger.error("failed to save config: \(String(describing: error), privacy: .public)")
                 }
             }
 
