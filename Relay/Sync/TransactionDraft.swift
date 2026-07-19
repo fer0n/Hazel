@@ -17,6 +17,17 @@ struct TransactionDraft: Codable, Identifiable {
     let startedAt: Date
     let payload: Payload
 
+    /// Set on a `.splitwiseWallet` draft once the YNAB transaction has
+    /// already been committed and the *only* thing left is the optional
+    /// "split with Splitwise?" choice. Its presence is what lets the reminder
+    /// offer Split Equally / Manually / Don't Split answerable straight from
+    /// the notification (see WalletDraftCompletion) and gives "dismiss =
+    /// leave it, YNAB already done" its meaning — a plain `.splitwiseWallet`
+    /// draft (e.g. from AddWalletTransactionToSplitwiseIntent, where the
+    /// split *is* the transaction) has none and stays an ordinary
+    /// tap-to-finish reminder. nil for old drafts, which decode as nil.
+    var pendingSplitContext: PendingSplitContext?
+
     enum Payload: Codable {
         case ynabWallet(merchant: String, amount: Double, card: String)
         /// `ownShare` carries forward an already-resolved manual split
@@ -24,6 +35,33 @@ struct TransactionDraft: Codable, Identifiable {
         /// half) so ContinueSplitwiseWalletTransactionView can prefill it
         /// instead of asking again. nil when the share isn't known yet.
         case splitwiseWallet(merchant: String, amount: Double, ownShare: Double? = nil)
+    }
+
+    /// Everything a background split-completion needs beyond the payload's
+    /// merchant/amount: the resolved expense description and the friend to
+    /// split with — captured the moment perform() is about to ask the split
+    /// choice, so a notification action can create the Splitwise expense
+    /// without re-resolving against config.
+    struct PendingSplitContext: Codable {
+        /// The Splitwise expense description (the resolved payee/template
+        /// name) — also used for the "Split with …" notification.
+        var description: String
+        /// The friend to split with, if one was already resolvable without
+        /// asking (explicit override, template friend, or the app-wide
+        /// default). When nil, Split Equally / Manually can't finish in the
+        /// background — they need a friend picked in-app — so those fall back
+        /// to opening the draft; Don't Split still resolves it.
+        var friendId: Int?
+        var friendFirstName: String?
+        var friendFullName: String?
+
+        /// nil unless all three friend fields are present — mirrors
+        /// WalletTransactionConfig.Template.splitwiseFriend's all-or-nothing
+        /// treatment.
+        var friend: SplitwiseFriendEntity? {
+            guard let friendId, let friendFirstName, let friendFullName else { return nil }
+            return SplitwiseFriendEntity(id: friendId, firstName: friendFirstName, fullName: friendFullName)
+        }
     }
 
     var service: TransactionService {

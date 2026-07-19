@@ -50,9 +50,12 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
 
     /// Must be called as early as possible (RelayApp.init()) — UNUserNotificationCenter
     /// only delivers a tap response to a delegate that's already set by the
-    /// time the response arrives.
+    /// time the response arrives, and its categories must be registered
+    /// before a notification carrying one is delivered.
     func start() {
-        UNUserNotificationCenter.current().delegate = self
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories([WalletSplitNotification.category])
     }
 
     nonisolated func userNotificationCenter(
@@ -61,15 +64,82 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let identifier = response.notification.request.identifier
+        let actionIdentifier = response.actionIdentifier
+        let replyText = (response as? UNTextInputNotificationResponse)?.userText
         Task { @MainActor in
             if identifier == PendingOperationQueue.reminderNotificationID {
                 DraftNotificationRouter.shared.pendingQueueReminderTapped = true
             } else if let id = UUID(uuidString: identifier) {
-                DraftNotificationRouter.shared.pendingDraftID = id
+                await DraftNotificationRouter.shared.handleDraftResponse(
+                    id: id,
+                    actionIdentifier: actionIdentifier,
+                    replyText: replyText
+                )
             } else {
                 logger.error("notification identifier wasn't recognized: \(identifier, privacy: .public)")
             }
             completionHandler()
+        }
+    }
+
+    /// Routes a draft-notification response: a plain tap opens the draft as
+    /// before, while a split-choice action tries to finish the transaction in
+    /// the background (WalletDraftCompletion), only falling back to opening
+    /// the app when it can't.
+    private func handleDraftResponse(id: UUID, actionIdentifier: String, replyText: String?) async {
+        let splitAction: SplitwiseSplitOption
+        switch actionIdentifier {
+        case WalletSplitNotification.equallyAction:
+            splitAction = .always
+        case WalletSplitNotification.manualAction:
+            splitAction = .manual
+        case WalletSplitNotification.noneAction:
+            splitAction = .never
+        default:
+            // Default tap (or dismiss handed to us) — open the draft in-app.
+            pendingDraftID = id
+            return
+        }
+
+        guard let draft = TransactionDraftStore.load().first(where: { $0.id == id }) else {
+            // Already completed/dismissed since the notification fired.
+            return
+        }
+
+        switch await WalletDraftCompletion.complete(draft: draft, action: splitAction, ownShareReply: replyText) {
+        case .completed(let dialog):
+            postConfirmation(dialog: dialog)
+        case .resolved:
+            // "Don't Split" — the transaction was already complete, so there's
+            // nothing to confirm.
+            break
+        case .needsApp:
+            // Couldn't finish from the notification — re-nudge the user into
+            // the app to complete it by hand. (A background action doesn't
+            // bring Relay forward, so setting pendingDraftID alone wouldn't
+            // reach them.)
+            TransactionDraftGuard.notifyNeedsApp(id)
+        }
+    }
+
+    /// A quiet, non-interactive banner confirming a background split —
+    /// the only feedback the user gets that their reply went through,
+    /// since the action never opened the app. No sound: it's an
+    /// acknowledgement, not a demand for attention.
+    private func postConfirmation(dialog: String) {
+        guard NotificationsPreferenceStore.isEnabled else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Split Added"
+        content.body = dialog
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                logger.error("failed to post completion confirmation: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
