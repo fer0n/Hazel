@@ -85,6 +85,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             \.$newTemplateName
             \.$descriptionOverride
             \.$autoMatchPattern
+            \.$friendOverride
             \.$splitwiseOwnShare
             \.$splitwiseRuntimeChoice
             \.$ensureCompletion
