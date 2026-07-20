@@ -103,6 +103,15 @@ struct ContentView: View {
                     .buttonStyle(.glass)
                 }
         }
+        // Popping back to the root (e.g. a pushed ContinueDraftView dismissing
+        // itself after completing a draft) never fires the scenePhase or root
+        // onAppear handlers, so reload here whenever the stack empties to drop
+        // the just-completed draft from the list.
+        .onChange(of: path) { _, newPath in
+            if newPath.isEmpty {
+                reloadMainListState()
+            }
+        }
     }
 
     private var mainList: some View {
@@ -206,17 +215,25 @@ struct ContentView: View {
     // token found while running a Shortcut) while this view's
     // YNABAuthService instance was already alive, plus the other
     // notification/intent deep-link routes below.
+    // Re-reads the file-backed stores that feed the main list. Called from
+    // every lifecycle transition that can leave those snapshots stale:
+    // foregrounding (scenePhase), first appearance, and popping back to the
+    // root of the NavigationStack after a pushed detail dismisses itself.
+    private func reloadMainListState() {
+        withAnimation {
+            drafts = TransactionDraftStore.load()
+            fileImportCount = Self.loadFileImportCount()
+            history = TransactionHistoryStore.load()
+        }
+    }
+
     @ViewBuilder
     private func withLifecycleHandlers<Content: View>(_ content: Content) -> some View {
         content
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     Task { await pendingQueue.flush() }
-                    withAnimation {
-                        drafts = TransactionDraftStore.load()
-                        fileImportCount = Self.loadFileImportCount()
-                        history = TransactionHistoryStore.load()
-                    }
+                    reloadMainListState()
                 }
             }
             // A tapped draft notification always jumps straight to that
@@ -347,14 +364,7 @@ struct ContentView: View {
                 if !UserDefaults.standard.bool(forKey: Self.hasCompletedOnboardingKey) {
                     showOnboarding = true
                 }
-                // Reappearing here also covers popping back from a pushed
-                // ContinueDraftView after it dismisses itself on completion —
-                // that path never triggers the scenePhase handler above.
-                withAnimation {
-                    drafts = TransactionDraftStore.load()
-                    fileImportCount = Self.loadFileImportCount()
-                    history = TransactionHistoryStore.load()
-                }
+                reloadMainListState()
             }
             .alert(
                 readdAlert?.title ?? "",
