@@ -18,7 +18,8 @@ struct OnboardingWelcomePage: View {
                     isConnected: ynabAuth.isAuthenticated,
                     connect: ynabAuth.signIn,
                     disconnect: ynabAuth.signOut,
-                    highlightWhenDisconnected: true
+                    highlightWhenDisconnected: true,
+                    connectedLabel: "Connected"
                 )
 
                 AccountConnectionRow(
@@ -26,12 +27,10 @@ struct OnboardingWelcomePage: View {
                     isConnected: splitwiseAuth.isAuthenticated,
                     connect: splitwiseAuth.signIn,
                     disconnect: splitwiseAuth.signOut,
-                    highlightWhenDisconnected: true
+                    highlightWhenDisconnected: true,
+                    connectedLabel: "Connected"
                 )
 
-                if splitwiseAuth.isAuthenticated {
-                    DefaultSplitwiseFriendRow()
-                }
             }
             .cardRowBackground()
         }

@@ -14,6 +14,8 @@ struct AccountConnectionRow: View {
     /// instead of the plain bordered one — used by the onboarding wizard to
     /// guide a new user toward connecting an account.
     var highlightWhenDisconnected: Bool = false
+    /// Label shown on the button when the account is already connected.
+    var connectedLabel: String = "Disconnect"
 
     @State private var showDisconnectConfirm = false
 
@@ -51,10 +53,10 @@ struct AccountConnectionRow: View {
         }
         Group {
             if highlightWhenDisconnected && !isConnected {
-                Button(isConnected ? "Disconnect" : "Connect", action: action)
+                Button(isConnected ? connectedLabel : "Connect", action: action)
                     .buttonStyle(.borderedProminent)
             } else {
-                Button(isConnected ? "Disconnect" : "Connect", action: action)
+                Button(isConnected ? connectedLabel : "Connect", action: action)
                     .buttonStyle(.bordered)
                     .tint(isConnected ? .gray : nil)
             }

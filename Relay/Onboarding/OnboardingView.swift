@@ -35,6 +35,7 @@ struct OnboardingView: View {
     @State private var didPrepareMigration = false
     @State private var migration = LegacyMigrationCallbackHandler()
     @State private var isRequestingNotificationPermission = false
+    @State private var splitwiseFriendCanContinue = SplitwiseDefaultFriendStore.load() != nil
     @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
 
@@ -51,8 +52,11 @@ struct OnboardingView: View {
         switch page {
         case .welcome:
             return !ynabAuth.isAuthenticated && !splitwiseAuth.isAuthenticated
+        case .splitwiseFriend:
+            return !splitwiseFriendCanContinue
         case .notifications:
             return isRequestingNotificationPermission
+                || (splitwiseAuth.isAuthenticated && !splitwiseFriendCanContinue)
         case .importTemplate:
             return false
         case .automation:
@@ -63,7 +67,9 @@ struct OnboardingView: View {
     private var isSecondaryDisabled: Bool {
         switch page {
         case .welcome:
-            return true
+            return false
+        case .splitwiseFriend:
+            return false
         case .notifications:
             return isRequestingNotificationPermission
         case .importTemplate:
@@ -76,10 +82,11 @@ struct OnboardingView: View {
     private var continueTitle: String {
         switch page {
         case .welcome: return "Continue"
+        case .splitwiseFriend: return "Continue"
         case .notifications: return "Enable Notifications"
         case .importTemplate:
             if usesLegacyShortcut != true {
-                return "Yes, Migrate data"
+                return "Yes"
             }
             if !didPrepareMigration {
                 return "Install Migration Shortcut"
@@ -95,14 +102,16 @@ struct OnboardingView: View {
     private var secondaryTitle: String {
         switch page {
         case .welcome: return "Skip"
+        case .splitwiseFriend: return "Skip"
         case .notifications: return "Skip"
-        case .importTemplate: return "Skip"
+        case .importTemplate: return usesLegacyShortcut != true ? "No" : "Skip"
         case .automation: return "Close"
         }
     }
 
     private enum OnboardingPage: Int, CaseIterable, Hashable, Sendable {
         case welcome
+        case splitwiseFriend
         case notifications
         case importTemplate
         case automation
@@ -110,6 +119,7 @@ struct OnboardingView: View {
         var title: String {
             switch self {
             case .welcome: return "Welcome to Relay"
+            case .splitwiseFriend: return "Default Friend"
             case .notifications: return "Enable Reminders"
             case .importTemplate: return "Using YNAB Toolkit?"
             case .automation: return "Setup Wallet Automation"
@@ -119,7 +129,9 @@ struct OnboardingView: View {
         var description: LocalizedStringKey {
             switch self {
             case .welcome:
-                return "Connect YNAB and/or Splitwise to get started."
+                return "Connect YNAB and/or Splitwise to get started"
+            case .splitwiseFriend:
+                return "Choose who to split expenses with by default"
             case .notifications:
                 return "Reminds you about an incomplete wallet transaction or offline transactions that are waiting to sync. Nothing else."
             case .importTemplate:
@@ -182,6 +194,10 @@ struct OnboardingView: View {
                         .containerRelativeFrame(.horizontal)
                         .id(OnboardingPage.welcome)
 
+                    OnboardingSplitwiseFriendPage(splitwiseAuth: splitwiseAuth, canContinue: $splitwiseFriendCanContinue)
+                        .containerRelativeFrame(.horizontal)
+                        .id(OnboardingPage.splitwiseFriend)
+
                     OnboardingNotificationsPage()
                         .containerRelativeFrame(.horizontal)
                         .id(OnboardingPage.notifications)
@@ -206,7 +222,7 @@ struct OnboardingView: View {
             .scrollIndicators(.hidden)
 
             HStack(spacing: 6) {
-                ForEach(OnboardingPage.allCases, id: \.self) { candidate in
+                ForEach(OnboardingPage.allCases.filter { $0 != .splitwiseFriend || splitwiseAuth.isAuthenticated }, id: \.self) { candidate in
                     Circle()
                         .fill(candidate == page ? Color.secondary : Color.secondary.opacity(0.3))
                         .frame(width: 8, height: 8)
@@ -220,7 +236,13 @@ struct OnboardingView: View {
                 Button {
                     switch page {
                     case .welcome:
-                        break
+                        if splitwiseAuth.isAuthenticated {
+                            withAnimation { scrollPosition = .splitwiseFriend }
+                        } else {
+                            withAnimation { scrollPosition = .notifications }
+                        }
+                    case .splitwiseFriend:
+                        withAnimation { scrollPosition = .notifications }
                     case .notifications:
                         withAnimation { scrollPosition = .importTemplate }
                     case .importTemplate:
@@ -243,6 +265,12 @@ struct OnboardingView: View {
                 Button {
                     switch page {
                     case .welcome:
+                        if splitwiseAuth.isAuthenticated {
+                            withAnimation { scrollPosition = .splitwiseFriend }
+                        } else {
+                            withAnimation { scrollPosition = .notifications }
+                        }
+                    case .splitwiseFriend:
                         withAnimation { scrollPosition = .notifications }
                     case .notifications:
                         NotificationsPreferenceStore.isEnabled = true
