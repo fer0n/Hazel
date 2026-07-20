@@ -59,6 +59,9 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
     @Parameter(title: "Split With")
     var friendOverride: SplitwiseFriendEntity?
 
+    @Parameter(title: "If Split With Isn't Set", default: .defaultFriend)
+    var splitwiseFriendFallback: SplitwiseFriendFallback
+
     @Parameter(title: "Split")
     var splitOptionOverride: SplitwiseTemplateOption?
 
@@ -86,6 +89,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             \.$descriptionOverride
             \.$autoMatchPattern
             \.$friendOverride
+            \.$splitwiseFriendFallback
             \.$splitwiseOwnShare
             \.$splitwiseRuntimeChoice
             \.$ensureCompletion
@@ -117,7 +121,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             let friend: SplitwiseFriendEntity
             if let friendOverride {
                 friend = friendOverride
-            } else if let defaultFriend = SplitwiseDefaultFriendStore.load() {
+            } else if splitwiseFriendFallback == .defaultFriend, let defaultFriend = SplitwiseDefaultFriendStore.load() {
                 logger.log("using app-wide default Splitwise friend")
                 friend = SplitwiseFriendEntity(id: defaultFriend.id, firstName: defaultFriend.firstName, fullName: defaultFriend.fullName)
             } else {
