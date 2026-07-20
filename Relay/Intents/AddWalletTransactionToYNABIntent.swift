@@ -339,39 +339,39 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             var dialog = WalletAutomationDialog.handleYNABOutcome(ynabOutcome, formattedAmount: formattedAmount, payeeName: payeeName, categoryId: categoryId)
             logger.log("YNAB result: \(dialog, privacy: .public)")
 
-            // YNAB is committed — retire the .ynabWallet guard. Anything left
-            // is the optional Splitwise split, guarded by its own draft below.
-            if let activeDraftId {
-                TransactionDraftGuard.complete(activeDraftId)
-            }
-            activeDraftId = nil
-
             // A template can carry a non-.never splitwiseOption from before
             // Splitwise was disconnected — treat as "never split" for this
             // run rather than asking for a friend/share that can only ever
             // fail against a disconnected Splitwise account.
             let effectiveSplitwiseOption = SplitwiseAuthService.currentAccessToken != nil ? splitwiseOption : .never
             guard effectiveSplitwiseOption != .never else {
+                // No split — YNAB is committed, so the guard's job is done.
+                if let activeDraftId {
+                    TransactionDraftGuard.complete(activeDraftId)
+                }
                 logger.log("perform() done — no split")
                 return .result(dialog: "\(dialog)")
             }
 
-            // Splitwise side-split. Guarded by its own .splitwiseWallet draft
-            // so an interruption here surfaces as a recoverable Splitwise-only
-            // reminder (YNAB is already done), not a YNAB re-do. Resolve the
-            // friend as far as possible without asking, up front, so it's on
-            // hand both for the split-choice notification and for a background
-            // completion; a live ask still happens below when neither an
-            // override, the template, nor the app default applies.
+            // Splitwise side-split. Repoint the SAME draft — and so the same
+            // notification slot — from the now-committed YNAB half to the
+            // remaining split, rather than completing one draft and beginning
+            // another: a single run must never leave two reminders (ynab +
+            // splitwise) able to fire at once. The result is a recoverable
+            // Splitwise-only reminder (YNAB is already done), not a YNAB re-do.
+            // Resolve the friend as far as possible without asking, up front,
+            // so it's on hand both for the split-choice notification and for a
+            // background completion; a live ask still happens below when
+            // neither an override, the template, nor the app default applies.
             var resolvedFriend: SplitwiseFriendEntity? = splitwiseFriend
                 ?? templateFriend.map { SplitwiseFriendEntity(id: $0.id, firstName: $0.firstName, fullName: $0.fullName) }
                 ?? (splitwiseFriendFallback == .defaultFriend
                     ? SplitwiseDefaultFriendStore.load().map { SplitwiseFriendEntity(id: $0.id, firstName: $0.firstName, fullName: $0.fullName) }
                     : nil)
 
-            activeDraftId = ensureCompletion
-                ? TransactionDraftGuard.begin(.splitwiseWallet(merchant: merchant, amount: amount))
-                : nil
+            if let activeDraftId {
+                TransactionDraftGuard.transition(activeDraftId, to: .splitwiseWallet(merchant: merchant, amount: amount))
+            }
 
             let splitwiseAction: SplitwiseSplitOption
             switch effectiveSplitwiseOption {
@@ -389,21 +389,18 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                     // The split is the only thing left and YNAB is already
                     // committed, so an interruption here can be answered
                     // straight from the reminder — arm the Split Equally /
-                    // Manually / Don't Split actions with the resolved friend
-                    // + description for a background finish.
-                    if let activeDraftId {
-                        TransactionDraftGuard.armSplitChoice(activeDraftId, context: TransactionDraft.PendingSplitContext(
+                    // Manually / Don't Split actions (with the resolved friend
+                    // + description) for the duration of the question.
+                    splitwiseAction = try await TransactionDraftGuard.askSplitChoice(
+                        draftId: activeDraftId,
+                        context: TransactionDraft.PendingSplitContext(
                             description: payeeName,
                             friendId: resolvedFriend?.id,
                             friendFirstName: resolvedFriend?.firstName,
                             friendFullName: resolvedFriend?.fullName
-                        ))
-                    }
-                    splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(payeeName) transaction with Splitwise?")
-                    // Answered — drop the armed context so a later throw
-                    // reschedules a plain reminder, then push the timer out.
-                    if let activeDraftId {
-                        TransactionDraftGuard.disarmSplitChoice(activeDraftId)
+                        )
+                    ) {
+                        try await $splitwiseRuntimeChoice.requestValue("Split this \(payeeName) transaction with Splitwise?")
                     }
                     touchDraft()
                 }
@@ -437,7 +434,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 // template and just needs a friend picked).
                 logger.log("splitwiseAction=\(splitwiseAction.rawValue, privacy: .public) but no friend available")
                 if let activeDraftId {
-                    TransactionDraftGuard.fail(activeDraftId)
+                    await TransactionDraftGuard.fail(activeDraftId)
                     return .result(dialog: "\(dialog) – no Splitwise friend set, sent a reminder to finish the split in Relay.")
                 }
                 return .result(dialog: "\(dialog) – no default Splitwise friend set, pick one in Relay or set \"Split With\" for this automation.")
@@ -469,7 +466,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             // the YNAB write, or the Splitwise split after it — so nudge the
             // user right away rather than waiting out the quiet-period window.
             if let activeDraftId {
-                TransactionDraftGuard.fail(activeDraftId)
+                await TransactionDraftGuard.fail(activeDraftId)
             }
             throw error
         }

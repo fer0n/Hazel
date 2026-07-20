@@ -75,16 +75,34 @@ enum TransactionDraftGuard {
         scheduleNotification(for: draft)
     }
 
-    /// Called on the Splitwise-side draft right before perform() asks the
-    /// live "split with Splitwise?" question — at which point the YNAB
-    /// transaction is already committed and the split is the only thing left.
+    /// Runs `ask` (the intent's own `$…​.requestValue` for the live "split
+    /// with Splitwise?" choice) with the Split Equally / Manually / Don't
+    /// Split quick-reply actions armed on `draftId` for its duration, then
+    /// clears them. Both wallet automations call this at their `.ask` branch;
+    /// keeping arm and disarm paired here means a caller can't leave a draft
+    /// armed past the question, and preserves the one subtlety that matters:
+    /// if `ask` throws (the prompt was dismissed — exactly what the quick
+    /// reply is for), the context is deliberately *left armed* so the intent's
+    /// catch → fail() fires the reminder still carrying the actions. On a
+    /// normal answer it disarms, so any *later* interruption reschedules a
+    /// plain reminder. `draftId` nil (Ensure Completion off) just runs `ask`.
+    static func askSplitChoice(
+        draftId: UUID?,
+        context: TransactionDraft.PendingSplitContext,
+        ask: () async throws -> SplitwiseSplitOption
+    ) async rethrows -> SplitwiseSplitOption {
+        guard let draftId else { return try await ask() }
+        armSplitChoice(draftId, context: context)
+        let choice = try await ask() // a throw here leaves it armed, on purpose
+        disarmSplitChoice(draftId)
+        return choice
+    }
+
     /// Saves the expense description + resolved friend onto the draft and
-    /// reschedules its reminder carrying the Split Equally / Manually / Don't
-    /// Split actions, so an interruption *at this question* — the single most
-    /// common one for a recurring merchant — can be answered straight from
-    /// the notification (see WalletDraftCompletion). Also resets the
-    /// quiet-period timer, since the user is now being actively prompted.
-    static func armSplitChoice(_ id: UUID, context: TransactionDraft.PendingSplitContext) {
+    /// reschedules its reminder carrying the split quick-reply actions. Also
+    /// resets the quiet-period timer, since the user is now being actively
+    /// prompted. Private — always paired with disarm via askSplitChoice.
+    private static func armSplitChoice(_ id: UUID, context: TransactionDraft.PendingSplitContext) {
         var drafts = TransactionDraftStore.load()
         guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
         drafts[index].pendingSplitContext = context
@@ -97,13 +115,12 @@ enum TransactionDraftGuard {
         scheduleNotification(for: drafts[index])
     }
 
-    /// Clears the armed split context once the split choice has actually been
-    /// answered — call right after the run gets past that question. From here
-    /// on any interruption (or a fail()) reschedules a *plain* reminder,
-    /// since the quick-reply actions only make sense while the split is still
-    /// the open question. Rescheduling itself is left to the touch() that
-    /// immediately follows.
-    static func disarmSplitChoice(_ id: UUID) {
+    /// Clears the armed split context once the split choice has been answered.
+    /// From here on any interruption (or a fail()) reschedules a *plain*
+    /// reminder, since the quick-reply actions only make sense while the split
+    /// is still the open question. Rescheduling itself is left to the touch()
+    /// that immediately follows. Private — see askSplitChoice.
+    private static func disarmSplitChoice(_ id: UUID) {
         var drafts = TransactionDraftStore.load()
         guard let index = drafts.firstIndex(where: { $0.id == id }),
               drafts[index].pendingSplitContext != nil else { return }
@@ -139,12 +156,49 @@ enum TransactionDraftGuard {
     /// window before finding out. Keeps the split actions when the throw
     /// happened *at* the split question (context still armed) — dismissing
     /// that prompt is exactly the case the quick reply is for.
-    static func fail(_ id: UUID) {
+    ///
+    /// But if the reminder has *already* fired, don't schedule it again:
+    /// re-adding the request re-alerts the same notification. This happens
+    /// when a background run's requestValue suspends past the quiet-period
+    /// window (the reminder fires at 30s), and then — when the app is next
+    /// opened — the suspended intent resumes, is abandoned, and unwinds
+    /// through here. Re-firing then is the duplicate the user sees on open;
+    /// it already fired, so leave it.
+    static func fail(_ id: UUID) async {
         guard let draft = TransactionDraftStore.load().first(where: { $0.id == id }) else { return }
+        let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+        guard !delivered.contains(where: { $0.request.identifier == id.uuidString }) else {
+            logger.log("fail: reminder already delivered for id=\(id.uuidString, privacy: .public) — not re-firing")
+            return
+        }
         scheduleNotification(for: draft, delay: 1)
     }
 
+    /// Repoints an existing draft at a new payload while keeping its id — and
+    /// therefore its notification identifier. Used when a wallet run commits
+    /// its YNAB half and the guard should switch to protecting only the
+    /// remaining Splitwise split: reusing the id (instead of complete() +
+    /// begin(), which mint a second identifier) keeps the whole run to a
+    /// single reminder slot, so it can never surface two notifications at
+    /// once — same-identifier scheduling replaces rather than adds. Clears any
+    /// already-delivered copy of the old reminder and reschedules a fresh
+    /// (plain) one for the new payload; the split actions are armed separately.
+    static func transition(_ id: UUID, to payload: TransactionDraft.Payload) {
+        var drafts = TransactionDraftStore.load()
+        guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
+        drafts[index] = TransactionDraft(id: id, startedAt: drafts[index].startedAt, payload: payload)
+        do {
+            try TransactionDraftStore.save(drafts)
+        } catch {
+            logger.error("failed to save transitioned draft: \(String(describing: error), privacy: .public)")
+        }
+        logger.log("transitioned draft id=\(id.uuidString, privacy: .public)")
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id.uuidString])
+        scheduleNotification(for: drafts[index])
+    }
+
     static func complete(_ id: UUID) {
+        logger.log("completing draft id=\(id.uuidString, privacy: .public)")
         var drafts = TransactionDraftStore.load()
         drafts.removeAll { $0.id == id }
         do {
@@ -176,9 +230,12 @@ enum TransactionDraftGuard {
     ) {
         guard NotificationsPreferenceStore.isEnabled else { return }
 
+        let attachActions = splitActions ?? (draft.pendingSplitContext != nil)
+        logger.log("scheduling draft reminder id=\(draft.id.uuidString, privacy: .public) delay=\(delay, privacy: .public) actions=\(attachActions, privacy: .public)")
+
         let content = UNMutableNotificationContent()
         content.sound = .default
-        if splitActions ?? (draft.pendingSplitContext != nil) {
+        if attachActions {
             // The split-choice reminder: the transaction (YNAB) is already
             // done, so this isn't "incomplete" — it just offers the optional
             // split. Title carries the summary, body poses the question the

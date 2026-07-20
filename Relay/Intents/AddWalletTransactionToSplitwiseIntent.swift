@@ -291,22 +291,20 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     logger.log("splitOption=ask — requesting runtime choice")
                     // Description + friend are already resolved, so an
                     // interruption at this question can be answered straight
-                    // from the reminder — arm the Split Equally / Manually /
-                    // Don't Split actions. Unlike the YNAB automation nothing
-                    // is committed ahead of the split (the expense *is* the
+                    // from the reminder. Unlike the YNAB automation nothing is
+                    // committed ahead of the split (the expense *is* the
                     // split), so a dismiss defers (the draft stays) rather than
                     // completing; Don't Split resolves it with no expense.
-                    if let draftId {
-                        TransactionDraftGuard.armSplitChoice(draftId, context: TransactionDraft.PendingSplitContext(
+                    splitwiseAction = try await TransactionDraftGuard.askSplitChoice(
+                        draftId: draftId,
+                        context: TransactionDraft.PendingSplitContext(
                             description: expenseDescription,
                             friendId: friendId,
                             friendFirstName: friendFirstName,
                             friendFullName: friendFullName
-                        ))
-                    }
-                    splitwiseAction = try await $splitwiseRuntimeChoice.requestValue("Split this \(expenseDescription) transaction with Splitwise?")
-                    if let draftId {
-                        TransactionDraftGuard.disarmSplitChoice(draftId)
+                        )
+                    ) {
+                        try await $splitwiseRuntimeChoice.requestValue("Split this \(expenseDescription) transaction with Splitwise?")
                     }
                     touchDraft()
                 }
@@ -358,7 +356,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             // reason to wait out the usual quiet-period window once
             // that's certain, so nudge the user right away instead.
             if let draftId {
-                TransactionDraftGuard.fail(draftId)
+                await TransactionDraftGuard.fail(draftId)
             }
             throw error
         }

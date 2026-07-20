@@ -87,6 +87,7 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
     /// the background (WalletDraftCompletion), only falling back to opening
     /// the app when it can't.
     private func handleDraftResponse(id: UUID, actionIdentifier: String, replyText: String?) async {
+        logger.log("draft response id=\(id.uuidString, privacy: .public) action=\(actionIdentifier, privacy: .public)")
         let splitAction: SplitwiseSplitOption
         switch actionIdentifier {
         case WalletSplitNotification.equallyAction:
@@ -128,6 +129,7 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
     /// acknowledgement, not a demand for attention.
     private func postConfirmation(dialog: String) {
         guard NotificationsPreferenceStore.isEnabled else { return }
+        logger.log("posting split confirmation")
         let content = UNMutableNotificationContent()
         content.title = "Split Added"
         content.body = dialog
