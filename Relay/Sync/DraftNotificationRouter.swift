@@ -88,6 +88,15 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
     /// the app when it can't.
     private func handleDraftResponse(id: UUID, actionIdentifier: String, replyText: String?) async {
         logger.log("draft response id=\(id.uuidString, privacy: .public) action=\(actionIdentifier, privacy: .public)")
+        
+        guard let draft = TransactionDraftStore.load().first(where: { $0.id == id }) else {
+            // Already completed/dismissed since the notification fired — if
+            // it's a default tap for a successfully-completed transaction,
+            // just stay on the main screen instead of trying to open a
+            // non-existent draft.
+            return
+        }
+        
         let splitAction: SplitwiseSplitOption
         switch actionIdentifier {
         case WalletSplitNotification.equallyAction:
@@ -98,12 +107,8 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
             splitAction = .never
         default:
             // Default tap (or dismiss handed to us) — open the draft in-app.
+            // We know the draft exists because of the guard above.
             pendingDraftID = id
-            return
-        }
-
-        guard let draft = TransactionDraftStore.load().first(where: { $0.id == id }) else {
-            // Already completed/dismissed since the notification fired.
             return
         }
 
