@@ -90,6 +90,9 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
     @Parameter(title: "Ensure Completion", description: "If this run is interrupted before finishing, send a notification to continue it later.", default: true)
     var ensureCompletion: Bool
 
+    @Parameter(title: "Success Notification", description: "When this action finishes successfully, send a confirmation notification.", default: true)
+    var successNotification: Bool
+
     // Parameters requested at runtime via `$param.requestValue(...)` MUST
     // appear here: on iOS 18+ requestValue throws a connection error for a
     // parameter that isn't in parameterSummary (FB14828592, confirmed still
@@ -115,6 +118,7 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             \.$splitwiseOwnShare
             \.$splitwiseRuntimeChoice
             \.$ensureCompletion
+            \.$successNotification
         }
     }
 
@@ -353,6 +357,12 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 if let activeDraftId {
                     TransactionDraftGuard.complete(activeDraftId)
                 }
+                if successNotification {
+                    WalletCompletionNotification.postConfirmation(
+                        title: String(localized: "Transaction Added"),
+                        dialog: dialog
+                    )
+                }
                 logger.log("perform() done — no split")
                 return .result(dialog: "\(dialog)")
             }
@@ -422,6 +432,12 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                 if let activeDraftId {
                     TransactionDraftGuard.complete(activeDraftId)
                 }
+                if successNotification {
+                    WalletCompletionNotification.postConfirmation(
+                        title: String(localized: "Transaction Added"),
+                        dialog: dialog
+                    )
+                }
                 logger.log("perform() done — not split")
                 return .result(dialog: "\(dialog)")
             }
@@ -474,6 +490,10 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
 
             if let activeDraftId {
                 TransactionDraftGuard.complete(activeDraftId)
+            }
+
+            if successNotification {
+                WalletCompletionNotification.postConfirmation(dialog: dialog)
             }
 
             logger.log("perform() done")

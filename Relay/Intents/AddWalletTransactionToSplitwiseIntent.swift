@@ -82,6 +82,9 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
     @Parameter(title: "Ensure Completion", description: "If this run is interrupted before finishing, send a notification to continue it later.", default: true)
     var ensureCompletion: Bool
 
+    @Parameter(title: "Success Notification", description: "When this action finishes successfully, send a confirmation notification.", default: true)
+    var successNotification: Bool
+
     static var parameterSummary: some ParameterSummary {
         Summary("Add \(\.$amount) Splitwise expense for \(\.$merchant)") {
             \.$templateChoice
@@ -93,6 +96,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
             \.$splitwiseOwnShare
             \.$splitwiseRuntimeChoice
             \.$ensureCompletion
+            \.$successNotification
         }
     }
 
@@ -335,7 +339,11 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                 if let draftId {
                     TransactionDraftGuard.complete(draftId)
                 }
-                return .result(dialog: "\(WalletAutomationDialog.splitwiseSkippedDialog(description: expenseDescription))")
+                let dialog = WalletAutomationDialog.splitwiseSkippedDialog(description: expenseDescription)
+                if successNotification {
+                    WalletCompletionNotification.postConfirmation(dialog: dialog)
+                }
+                return .result(dialog: "\(dialog)")
             }
 
             var resolvedOwnShare: Double? = splitwiseOwnShare
@@ -367,6 +375,9 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     TransactionDraftGuard.complete(draftId)
                 }
                 let dialog = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: expenseDescription)
+                if successNotification {
+                    WalletCompletionNotification.postConfirmation(dialog: dialog)
+                }
                 logger.log("Splitwise result: \(dialog, privacy: .public)")
                 return .result(dialog: "\(dialog)")
             } catch {

@@ -109,7 +109,7 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
 
         switch await WalletDraftCompletion.complete(draft: draft, action: splitAction, ownShareReply: replyText) {
         case .completed(let dialog):
-            postConfirmation(dialog: dialog)
+            WalletCompletionNotification.postConfirmation(dialog: dialog)
         case .resolved:
             // "Don't Split" — the transaction was already complete, so there's
             // nothing to confirm.
@@ -120,28 +120,6 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
             // bring Relay forward, so setting pendingDraftID alone wouldn't
             // reach them.)
             TransactionDraftGuard.notifyNeedsApp(id)
-        }
-    }
-
-    /// A quiet, non-interactive banner confirming a background split —
-    /// the only feedback the user gets that their reply went through,
-    /// since the action never opened the app. No sound: it's an
-    /// acknowledgement, not a demand for attention.
-    private func postConfirmation(dialog: String) {
-        guard NotificationsPreferenceStore.isEnabled else { return }
-        logger.log("posting split confirmation")
-        let content = UNMutableNotificationContent()
-        content.title = String(localized: "Split Added")
-        content.body = dialog
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        )
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error {
-                logger.error("failed to post completion confirmation: \(String(describing: error), privacy: .public)")
-            }
         }
     }
 

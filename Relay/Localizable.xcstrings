@@ -2045,6 +2045,9 @@
         }
       }
     },
+    "Success Notification" : {
+
+    },
     "Tap on \"Shortcut Input\" on top, then select \"Amount\"." : {
       "localizations" : {
         "de" : {
@@ -2134,6 +2137,9 @@
           }
         }
       }
+    },
+    "Transaction Added" : {
+
     },
     "Transaction draft" : {
       "localizations" : {
@@ -2225,6 +2231,9 @@
           }
         }
       }
+    },
+    "When this action finishes successfully, send a confirmation notification." : {
+
     },
     "When you connect an account, Relay opens YNAB's or Splitwise's own sign-in page in a secure browser window. Your username and password go directly to them — Relay never sees or stores your credentials." : {
       "localizations" : {
