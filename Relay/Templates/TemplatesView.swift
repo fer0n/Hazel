@@ -24,6 +24,15 @@ struct TemplatesView: View {
     var body: some View {
         List {
             Section {
+                NavigationLink {
+                    CardsMappingView()
+                } label: {
+                    CardsMappingRow(cardCount: config.cards.count)
+                }
+            }
+            .cardRowBackground()
+
+            Section {
                 ForEach(config.templates.keys.sorted(), id: \.self) { name in
                     NavigationLink {
                         TemplateEditView(templateName: name, onSave: { _ in reload() }, onDelete: reload)
@@ -83,6 +92,23 @@ struct TemplatesView: View {
             reload()
         } catch {
             logger.error("failed to delete template: \(String(describing: error), privacy: .public)")
+        }
+    }
+}
+
+private struct CardsMappingRow: View {
+    let cardCount: Int
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text("Cards Mapping")
+                Text("\(cardCount) card\(cardCount == 1 ? "" : "s")")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            ListChevron()
         }
     }
 }

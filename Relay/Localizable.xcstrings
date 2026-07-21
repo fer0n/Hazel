@@ -102,6 +102,16 @@
     "%lld" : {
       "shouldTranslate" : false
     },
+    "%lld card%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld card%2$@"
+          }
+        }
+      }
+    },
     "0" : {
 
     },
@@ -390,6 +400,9 @@
           }
         }
       }
+    },
+    "Cards Mapping" : {
+
     },
     "Category" : {
       "localizations" : {
@@ -1232,6 +1245,9 @@
           }
         }
       }
+    },
+    "No cards yet. A card is remembered the first time you add a wallet transaction with it, then appears here to remap." : {
+
     },
     "No connection – %@ – queued for sync" : {
       "localizations" : {
