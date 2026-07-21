@@ -228,6 +228,7 @@ struct ContentView: View {
             }
         }
         .themedList(background: .backgroundColor)
+        .statusBarBackground()
     }
 
     // Picks up a token invalidated by an App Intent (e.g. an expired YNAB
