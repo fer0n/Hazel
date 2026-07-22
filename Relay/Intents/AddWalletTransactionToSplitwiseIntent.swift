@@ -376,7 +376,19 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                 }
                 let dialog = WalletAutomationDialog.splitwiseWalletDialog(outcome: outcome, formattedAmount: formattedAmount, description: expenseDescription)
                 if successNotification {
-                    WalletCompletionNotification.postConfirmation(dialog: dialog, historyEntryID: TransactionHistoryStore.newestEntryID())
+                    let isQueued: Bool = if case .queued = outcome { true } else { false }
+                    let content = WalletAutomationDialog.notificationContent(
+                        isQueued: isQueued,
+                        formattedAmount: formattedAmount,
+                        name: expenseDescription,
+                        defaultTitle: String(localized: "Split Added"),
+                        dialog: dialog
+                    )
+                    WalletCompletionNotification.postConfirmation(
+                        title: content.title,
+                        dialog: content.body,
+                        historyEntryID: TransactionHistoryStore.newestEntryID()
+                    )
                 }
                 logger.log("Splitwise result: \(dialog, privacy: .public)")
                 return .result(dialog: "\(dialog)")

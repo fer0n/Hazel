@@ -13,18 +13,23 @@ import SwiftUI
 struct PendingQueueView: View {
     @State private var queue = PendingOperationQueue.shared
     @State private var isFlushing = false
+    @State private var selectedOperation: PendingOperation?
 
     var body: some View {
         List {
             ForEach(queue.operations) { operation in
-                TransactionSummaryRow(
-                    service: operation.service,
-                    date: operation.queuedAt,
-                    title: operation.payload.title,
-                    amount: operation.payload.formattedAmount,
-                    detail: operation.payload.detail,
-                    errorMessage: operation.lastError
-                )
+                Button {
+                    selectedOperation = operation
+                } label: {
+                    TransactionSummaryRow(
+                        service: operation.service,
+                        date: operation.queuedAt,
+                        title: operation.payload.title,
+                        amount: operation.payload.formattedAmount,
+                        detail: operation.payload.detail,
+                        errorMessage: operation.lastError
+                    )
+                }
                 .cardRowBackground()
                 .swipeActions {
                         Button("Delete", role: .destructive) {
@@ -44,7 +49,12 @@ struct PendingQueueView: View {
                 EmptyListBackground(systemName: "arrow.triangle.2.circlepath")
             }
         }
-        .navigationTitle("Pending Queue")
+        .navigationTitle("Pending")
+        .sheet(item: $selectedOperation) { operation in
+            NavigationStack {
+                TransactionDetailView(source: .pending(operation))
+            }
+        }
         .toolbar {
             if !queue.operations.isEmpty {
                 ToolbarItem(placement: .primaryAction) {

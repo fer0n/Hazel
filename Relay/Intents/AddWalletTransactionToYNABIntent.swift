@@ -362,9 +362,16 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                     TransactionDraftGuard.complete(activeDraftId)
                 }
                 if successNotification {
+                    let content = WalletAutomationDialog.notificationContent(
+                        isQueued: ynabOutcome == .queued,
+                        formattedAmount: formattedAmount,
+                        name: payeeName,
+                        defaultTitle: String(localized: "Transaction Added"),
+                        dialog: dialog
+                    )
                     WalletCompletionNotification.postConfirmation(
-                        title: String(localized: "Transaction Added"),
-                        dialog: dialog,
+                        title: content.title,
+                        dialog: content.body,
                         historyEntryID: TransactionHistoryStore.newestEntryID()
                     )
                 }
@@ -438,9 +445,16 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
                     TransactionDraftGuard.complete(activeDraftId)
                 }
                 if successNotification {
+                    let content = WalletAutomationDialog.notificationContent(
+                        isQueued: ynabOutcome == .queued,
+                        formattedAmount: formattedAmount,
+                        name: payeeName,
+                        defaultTitle: String(localized: "Transaction Added"),
+                        dialog: dialog
+                    )
                     WalletCompletionNotification.postConfirmation(
-                        title: String(localized: "Transaction Added"),
-                        dialog: dialog,
+                        title: content.title,
+                        dialog: content.body,
                         historyEntryID: TransactionHistoryStore.newestEntryID()
                     )
                 }
@@ -490,16 +504,27 @@ nonisolated struct AddWalletTransactionToYNABIntent: AppIntent {
             }
 
             let ownShare = (splitwiseAction == .manual) ? resolvedOwnShare : nil
-            let fragment = await WalletAutomationDialog.splitDialogFragment(amount: amount, description: payeeName, friend: friend, ownShare: ownShare, groupId: walletGroupId)
-            logger.log("Splitwise split result: \(fragment, privacy: .public)")
-            dialog += fragment
+            let split = await WalletAutomationDialog.splitDialogFragment(amount: amount, description: payeeName, friend: friend, ownShare: ownShare, groupId: walletGroupId)
+            logger.log("Splitwise split result: \(split.fragment, privacy: .public)")
+            dialog += split.fragment
 
             if let activeDraftId {
                 TransactionDraftGuard.complete(activeDraftId)
             }
 
             if successNotification {
-                WalletCompletionNotification.postConfirmation(dialog: dialog, historyEntryID: TransactionHistoryStore.newestEntryID())
+                let content = WalletAutomationDialog.notificationContent(
+                    isQueued: ynabOutcome == .queued || split.isQueued,
+                    formattedAmount: formattedAmount,
+                    name: payeeName,
+                    defaultTitle: String(localized: "Split Added"),
+                    dialog: dialog
+                )
+                WalletCompletionNotification.postConfirmation(
+                    title: content.title,
+                    dialog: content.body,
+                    historyEntryID: TransactionHistoryStore.newestEntryID()
+                )
             }
 
             logger.log("perform() done")

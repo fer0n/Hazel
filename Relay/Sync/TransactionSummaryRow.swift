@@ -40,14 +40,14 @@ struct TransactionSummaryRow: View {
                     .font(.body)
                     .fontWeight(.semibold)
                 HStack(spacing: 4) {
-                    Image(systemName: service.systemImage)
-                    if let secondaryService {
-                        Image(systemName: secondaryService.systemImage)
-                    }
                     if errorMessage != nil {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.orange)
+                    }
+                    Image(systemName: service.systemImage)
+                    if let secondaryService {
+                        Image(systemName: secondaryService.systemImage)
                     }
                     if let detail {
                         Text("· \(detail)")

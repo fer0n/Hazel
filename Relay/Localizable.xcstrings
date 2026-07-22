@@ -113,7 +113,14 @@
       }
     },
     "0" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0"
+          }
+        }
+      }
     },
     "Access Tokens" : {
       "localizations" : {
@@ -286,7 +293,14 @@
       }
     },
     "Added %@" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hinzugefügt %@"
+          }
+        }
+      }
     },
     "Adds a Splitwise expense from a Wallet transaction, remembering friend/split choices for next time." : {
       "localizations" : {
@@ -358,6 +372,16 @@
         }
       }
     },
+    "Attempt %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versuch %lld"
+          }
+        }
+      }
+    },
     "Auto-Match Pattern" : {
       "localizations" : {
         "de" : {
@@ -389,7 +413,14 @@
       }
     },
     "Both" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beide"
+          }
+        }
+      }
     },
     "Card" : {
       "localizations" : {
@@ -402,7 +433,14 @@
       }
     },
     "Cards Mapping" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kartenzuordnung"
+          }
+        }
+      }
     },
     "Category" : {
       "localizations" : {
@@ -475,7 +513,14 @@
       }
     },
     "Confirm" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bestätigen"
+          }
+        }
+      }
     },
     "Connect" : {
       "localizations" : {
@@ -759,10 +804,34 @@
       }
     },
     "Discard" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwerfen"
+          }
+        }
+      }
     },
     "Discard this draft?" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diesen Entwurf verwerfen?"
+          }
+        }
+      }
+    },
+    "Discard this transaction?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Transaktion verwerfen?"
+          }
+        }
+      }
     },
     "Disconnect" : {
       "localizations" : {
@@ -1125,6 +1194,16 @@
         }
       }
     },
+    "Last Error" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Fehler"
+          }
+        }
+      }
+    },
     "Leave blank to split the cost equally" : {
       "localizations" : {
         "de" : {
@@ -1257,7 +1336,14 @@
       }
     },
     "No cards yet. A card is remembered the first time you add a wallet transaction with it, then appears here to remap." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine Karten. Eine Karte wird gespeichert, sobald du zum ersten Mal eine Wallet-Transaktion damit hinzufügst, und erscheint dann hier zur Neuzuordnung."
+          }
+        }
+      }
     },
     "No connection – %@ – queued for sync" : {
       "localizations" : {
@@ -1265,6 +1351,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keine Verbindung – %@ – zur Synchronisierung in Warteschlange"
+          }
+        }
+      }
+    },
+    "No connection, but added locally. Waiting to sync." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Verbindung, aber lokal hinzugefügt. Warte auf Synchronisierung."
           }
         }
       }
@@ -1475,7 +1571,18 @@
         }
       }
     },
+    "Pending" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausstehend"
+          }
+        }
+      }
+    },
     "Pending Queue" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1501,6 +1608,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Holt Kategorien und Händler direkt aus dem DataJar-Speicher des alten „YNAB Toolkit“-Kurzbefehls."
+          }
+        }
+      }
+    },
+    "Queued %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eingereiht %@"
           }
         }
       }
@@ -2126,7 +2243,14 @@
       }
     },
     "Type" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Typ"
+          }
+        }
+      }
     },
     "Used to remind you if a wallet transaction is left unfinished or a queued transaction is still waiting to sync, so nothing silently gets lost." : {
       "localizations" : {
@@ -2210,7 +2334,14 @@
       }
     },
     "With" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit"
+          }
+        }
+      }
     },
     "Yes" : {
       "extractionState" : "stale",

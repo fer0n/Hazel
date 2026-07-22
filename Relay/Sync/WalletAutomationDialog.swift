@@ -56,7 +56,7 @@ nonisolated enum WalletAutomationDialog {
         friend: SplitwiseFriendEntity,
         ownShare: Double?,
         groupId: UUID? = nil
-    ) async -> String {
+    ) async -> (fragment: String, isQueued: Bool) {
         do {
             let outcome = try await SplitwiseExpenseHelper.addExpense(
                 amount: amount,
@@ -67,15 +67,34 @@ nonisolated enum WalletAutomationDialog {
             )
             switch outcome {
             case .created(let shareSummary):
-                return " – \(shareSummary)"
+                return (" – \(shareSummary)", false)
             case .queued:
-                return " – split queued for sync"
+                return (" – split queued for sync", true)
             }
         } catch {
             let message = (error as? SplitwiseIntentError)?.localizedStringResource
                 ?? "Couldn't add the Splitwise expense."
-            return " – \(String(localized: message))"
+            return (" – \(String(localized: message))", false)
         }
+    }
+
+    /// Notification title/body for a wallet automation's outcome. Siri's
+    /// spoken result (`dialog`) keeps the fuller "$5.00 at Marktkauf – queued
+    /// for sync" wording regardless of outcome; the notification instead
+    /// leads with the amount/name as its title once anything queued, so the
+    /// banner doesn't read like a completed "Added" while still offline.
+    static func notificationContent(
+        isQueued: Bool,
+        formattedAmount: String,
+        name: String,
+        defaultTitle: String,
+        dialog: String
+    ) -> (title: String, body: String) {
+        guard isQueued else { return (defaultTitle, dialog) }
+        return (
+            "\(formattedAmount) at \(name)",
+            String(localized: "No connection, but added locally. Waiting to sync.")
+        )
     }
 
     /// Records category usage on success and describes a YNAB write as a

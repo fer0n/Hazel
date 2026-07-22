@@ -25,7 +25,6 @@ import SwiftUI
 struct ContinueWalletTransactionView: View {
     @State private var model: ContinueWalletTransactionModel
     @State private var showTemplateEditor = false
-    @State private var showDiscardConfirmation = false
     @State private var editingTemplateName: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -164,22 +163,8 @@ struct ContinueWalletTransactionView: View {
                 .listRowBackground(Color.sheetBackgroundColor)
             }
 
-            if onDiscard != nil {
-                Section {
-                    Button("Discard") {
-                        showDiscardConfirmation = true
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .confirmationDialog(
-                        "Discard this draft?",
-                        isPresented: $showDiscardConfirmation,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Confirm", role: .destructive, action: onDiscard!)
-                    }
-                }
-                .cardRowBackground()
+            if let onDiscard {
+                DiscardSection(confirmationTitle: "Discard this draft?", onDiscard: onDiscard)
             }
         }
         .themedList(background: .sheetBackgroundColor)

@@ -25,9 +25,9 @@ private let logger = Logger(subsystem: "com.octabits.relay", category: "WalletDr
 
 nonisolated enum WalletDraftCompletion {
     enum Result {
-        /// The split expense was created (or queued offline). `dialog` is the
-        /// human-readable summary, for a confirmation notification.
-        case completed(dialog: String)
+        /// The split expense was created (or queued offline). `title`/`dialog`
+        /// are ready to show as-is in a confirmation notification.
+        case completed(title: String, dialog: String)
         /// "Don't Split" — the draft is resolved with no expense; nothing to
         /// confirm, since the transaction was already complete without it.
         case resolved
@@ -93,7 +93,15 @@ nonisolated enum WalletDraftCompletion {
             )
             TransactionDraftGuard.complete(draft.id)
             logger.log("completed split in background: \(dialog, privacy: .public)")
-            return .completed(dialog: dialog)
+            let isQueued: Bool = if case .queued = outcome { true } else { false }
+            let content = WalletAutomationDialog.notificationContent(
+                isQueued: isQueued,
+                formattedAmount: formattedAmount,
+                name: context.description,
+                defaultTitle: String(localized: "Split Added"),
+                dialog: dialog
+            )
+            return .completed(title: content.title, dialog: content.body)
         } catch {
             // A non-connectivity Splitwise failure (bad auth, validation) —
             // send the user into the app to sort it out rather than silently

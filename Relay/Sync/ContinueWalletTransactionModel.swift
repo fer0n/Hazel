@@ -577,7 +577,7 @@ final class ContinueWalletTransactionModel {
         groupId: UUID?
     ) async -> String? {
         guard action != .never, let friend else { return nil }
-        return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare, groupId: groupId)
+        return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare, groupId: groupId).fragment
     }
 
     private func submitSplitwise() async -> Bool {

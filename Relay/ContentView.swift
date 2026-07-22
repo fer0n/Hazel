@@ -157,7 +157,7 @@ struct ContentView: View {
 
             if pendingQueue.operations.count > 0 {
                 NavigationLink(value: ContentRoute.pendingQueue) {
-                    RowLabel(title: "Pending Queue", systemImage: "arrow.triangle.2.circlepath", badge: pendingQueue.operations.count)
+                    RowLabel(title: "Pending", systemImage: "arrow.triangle.2.circlepath", badge: pendingQueue.operations.count)
                 }
                 .cardRowBackground()
                 .transition(Self.rowTransition)

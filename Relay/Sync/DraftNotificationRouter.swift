@@ -124,8 +124,8 @@ final class DraftNotificationRouter: NSObject, UNUserNotificationCenterDelegate 
         }
 
         switch await WalletDraftCompletion.complete(draft: draft, action: splitAction, ownShareReply: replyText) {
-        case .completed(let dialog):
-            WalletCompletionNotification.postConfirmation(dialog: dialog, historyEntryID: TransactionHistoryStore.newestEntryID())
+        case .completed(let title, let dialog):
+            WalletCompletionNotification.postConfirmation(title: title, dialog: dialog, historyEntryID: TransactionHistoryStore.newestEntryID())
         case .resolved:
             // "Don't Split" — the transaction was already complete, so there's
             // nothing to confirm.

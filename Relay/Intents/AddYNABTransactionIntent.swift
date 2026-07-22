@@ -119,7 +119,7 @@ nonisolated struct AddYNABTransactionIntent: AppIntent {
             // "Always" forces an equal split even if a share happens to be
             // set; only "Manual" actually uses the entered share.
             let ownShare = (effectiveSplitwiseOption == .manual) ? splitwiseOwnShare : nil
-            return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare, groupId: groupId)
+            return await WalletAutomationDialog.splitDialogFragment(amount: amount, description: description, friend: friend, ownShare: ownShare, groupId: groupId).fragment
         }
 
         async let ynabOutcome = PendingSync.createYNABTransaction(transaction, token: token, summary: "\(formattedAmount) at \(payee)", groupId: groupId)

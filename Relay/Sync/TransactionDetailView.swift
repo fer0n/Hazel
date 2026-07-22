@@ -13,6 +13,9 @@
 //    read-only summary of an already-created YNAB transaction and/or
 //    Splitwise expense. No editing — re-adding stays on the row's context
 //    menu.
+//  - `.pending(_:)` — a tapped row in PendingQueueView: a read-only summary
+//    of a YNAB transaction or Splitwise expense still waiting to be sent.
+//    Retry/delete stay on the row's swipe actions.
 //
 
 import SwiftUI
@@ -21,6 +24,7 @@ struct TransactionDetailView: View {
     enum Source {
         case draft(id: UUID)
         case history(TransactionHistoryEntry)
+        case pending(PendingOperation)
     }
 
     let source: Source
@@ -31,6 +35,8 @@ struct TransactionDetailView: View {
             DraftDetailContent(draftId: id)
         case .history(let entry):
             HistoryDetailContent(entry: entry)
+        case .pending(let operation):
+            PendingDetailContent(operation: operation)
         }
     }
 }
@@ -72,6 +78,58 @@ private struct DraftDetailContent: View {
     }
 }
 
+// MARK: - Shared read-only layout
+
+/// Hero amount/service/subtitle/timestamp header, plus caller-supplied detail
+/// sections — the common shell behind `HistoryDetailContent` and
+/// `PendingDetailContent`.
+private struct ReadOnlyDetailContent<Sections: View>: View {
+    let amount: String
+    let serviceIcons: [String]
+    let subtitle: String
+    let timestamp: Text
+    /// Called when the user confirms "Discard". Nil hides the section
+    /// entirely (e.g. history, which can't be discarded).
+    var onDiscard: (() -> Void)? = nil
+    @ViewBuilder var sections: () -> Sections
+
+    var body: some View {
+        List {
+            Section {
+                VStack(spacing: 4) {
+                    Text(amount)
+                        .foregroundStyle(Color.foregroundColor)
+                        .fontWeight(.heavy)
+                        .font(.system(size: 50))
+                        .minimumScaleFactor(0.5)
+                    HStack(spacing: 6) {
+                        ForEach(serviceIcons, id: \.self) { icon in
+                            Image(systemName: icon)
+                        }
+                        Text(subtitle)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    timestamp
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.sheetBackgroundColor)
+
+            sections()
+
+            if let onDiscard {
+                DiscardSection(confirmationTitle: "Discard this transaction?", onDiscard: onDiscard)
+            }
+        }
+        .themedList(background: .sheetBackgroundColor)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - History (read-only)
 
 private struct HistoryDetailContent: View {
@@ -82,32 +140,12 @@ private struct HistoryDetailContent: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                VStack(spacing: 4) {
-                    Text(entry.formattedAmount)
-                        .foregroundStyle(Color.foregroundColor)
-                        .fontWeight(.heavy)
-                        .font(.system(size: 50))
-                        .minimumScaleFactor(0.5)
-                    HStack(spacing: 6) {
-                        Image(systemName: entry.service.systemImage)
-                        if let secondaryService = entry.secondaryService {
-                            Image(systemName: secondaryService.systemImage)
-                        }
-                        Text(entry.title)
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    Text("Added \(RelativeDateTimeFormatter().localizedString(for: entry.createdAt, relativeTo: Date()))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.sheetBackgroundColor)
-
+        ReadOnlyDetailContent(
+            amount: entry.formattedAmount,
+            serviceIcons: [entry.service.systemImage] + (entry.secondaryService.map { [$0.systemImage] } ?? []),
+            subtitle: entry.title,
+            timestamp: Text("Added \(RelativeDateTimeFormatter().localizedString(for: entry.createdAt, relativeTo: Date()))")
+        ) {
             Section {
                 DraftDetailRow(icon: "text.alignleft", title: titleLabel) {
                     Text(entry.title)
@@ -138,8 +176,56 @@ private struct HistoryDetailContent: View {
                 }
             }
         }
-        .themedList(background: .sheetBackgroundColor)
-        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Pending (read-only)
+
+private struct PendingDetailContent: View {
+    let operation: PendingOperation
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var titleLabel: LocalizedStringKey {
+        operation.service == .ynab ? "Payee" : "Description"
+    }
+
+    var body: some View {
+        ReadOnlyDetailContent(
+            amount: operation.payload.formattedAmount,
+            serviceIcons: [operation.service.systemImage],
+            subtitle: operation.payload.title,
+            timestamp: Text("Queued \(RelativeDateTimeFormatter().localizedString(for: operation.queuedAt, relativeTo: Date()))"),
+            onDiscard: discard
+        ) {
+            Section {
+                DraftDetailRow(icon: "text.alignleft", title: titleLabel) {
+                    Text(operation.payload.title)
+                }
+                .cardRowBackground()
+
+                if let detail = operation.payload.detail {
+                    DraftDetailRow(icon: operation.service == .ynab ? "tag.fill" : "person.2.fill", title: operation.service == .ynab ? "Category" : "With") {
+                        Text(detail)
+                    }
+                    .cardRowBackground()
+                }
+            }
+
+            if let lastError = operation.lastError {
+                Section("Last Error") {
+                    DraftDetailRow(icon: "exclamationmark.triangle.fill", title: "Attempt \(operation.attemptCount)") {
+                        Text(lastError)
+                    }
+                    .cardRowBackground()
+                }
+            }
+        }
+    }
+
+    private func discard() {
+        PendingOperationQueue.shared.delete(id: operation.id)
+        dismiss()
     }
 }
 
