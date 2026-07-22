@@ -48,6 +48,7 @@ struct TransactionDraftsView: View {
             NavigationStack {
                 TransactionDetailView(source: .draft(id: draft.id))
             }
+            .presentationBackground(Color.sheetBackgroundColor)
         }
     }
 }

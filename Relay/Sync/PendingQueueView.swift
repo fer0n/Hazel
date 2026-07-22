@@ -54,6 +54,7 @@ struct PendingQueueView: View {
             NavigationStack {
                 TransactionDetailView(source: .pending(operation))
             }
+            .presentationBackground(Color.sheetBackgroundColor)
         }
         .toolbar {
             if !queue.operations.isEmpty {

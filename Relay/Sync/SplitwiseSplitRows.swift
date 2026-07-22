@@ -115,6 +115,8 @@ struct SplitwiseOwnShareRow: View {
     @Binding var ownShareText: String
     var isIncomplete: Bool = false
 
+    @FocusState private var isFocused: Bool
+
     var body: some View {
         DraftDetailRow(
             icon: "eurosign.circle.fill",
@@ -124,6 +126,7 @@ struct SplitwiseOwnShareRow: View {
             TextField("Your Share", text: $ownShareText)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
+                .dismissButtonToolbar(isFocused: $isFocused)
         }
         .cardRowBackground()
     }

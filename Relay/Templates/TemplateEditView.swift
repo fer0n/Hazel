@@ -12,7 +12,6 @@
 //
 
 import SwiftUI
-import UIKit
 import os
 
 private let logger = Logger(subsystem: "com.octabits.relay", category: "TemplateEditView")
@@ -230,12 +229,7 @@ struct TemplateEditView: View {
                 )
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            isKeyboardVisible = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            isKeyboardVisible = false
-        }
+        .onKeyboardVisibilityChange($isKeyboardVisible)
         .task {
             await loadCategories()
             await loadFriends()

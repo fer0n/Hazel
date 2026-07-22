@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 extension Color {
     static let foregroundColor = Color("ForegroundColor")
@@ -183,6 +184,7 @@ struct BottomBarActionButton: View {
         }
         .glassProminentActionButton()
         .disabled(isDisabled)
+        .padding(.bottom, 5)
     }
 }
 
@@ -214,6 +216,42 @@ extension View {
             .buttonStyle(.glassProminent)
             .tint(Color.accentColor)
             .colorScheme(.dark)
+    }
+
+    /// Tracks system keyboard visibility into `isVisible` — shared by every
+    /// view that hides/adjusts a `safeAreaBar` action button while the
+    /// keyboard is up (`safeAreaBar` docks its content right above the
+    /// keyboard, which otherwise reads as the button chasing the keyboard up
+    /// the screen).
+    func onKeyboardVisibilityChange(_ isVisible: Binding<Bool>) -> some View {
+        self
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                isVisible.wrappedValue = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                isVisible.wrappedValue = false
+            }
+    }
+
+    /// Binds this field's focus to `isFocused` and adds a keyboard-toolbar
+    /// dismiss button (chevron-down, top right) — for keyboard types like
+    /// `.decimalPad`/`.numberPad` that have no built-in return/dismiss key.
+    func dismissButtonToolbar(isFocused: FocusState<Bool>.Binding) -> some View {
+        self
+            .focused(isFocused)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    if isFocused.wrappedValue {
+                        Spacer()
+                        Button {
+                            isFocused.wrappedValue = false
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
     }
 
     /// Text styling shared by themed List section footers.

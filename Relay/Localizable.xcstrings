@@ -252,6 +252,9 @@
         }
       }
     },
+    "Add to %@" : {
+
+    },
     "Add Transaction" : {
       "localizations" : {
         "de" : {
@@ -623,6 +626,7 @@
       }
     },
     "Couldn't Re-add" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -633,6 +637,7 @@
       }
     },
     "Couldn't re-add the transaction." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {

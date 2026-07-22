@@ -26,14 +26,16 @@ struct ContinueWalletTransactionView: View {
     @State private var model: ContinueWalletTransactionModel
     @State private var showTemplateEditor = false
     @State private var editingTemplateName: String?
+    @State private var isKeyboardVisible = false
+    @FocusState private var isAmountFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     /// Called when the user taps "Discard" — typically deletes the draft and
     /// dismisses. Nil hides the section entirely (e.g. manual entries).
     let onDiscard: (() -> Void)?
 
-    init(draft: TransactionDraft, isManual: Bool = false, onDiscard: (() -> Void)? = nil, isAuthenticatedOverride: Bool? = nil) {
-        _model = State(initialValue: ContinueWalletTransactionModel(draft: draft, isManual: isManual, isAuthenticatedOverride: isAuthenticatedOverride))
+    init(draft: TransactionDraft, isManual: Bool = false, prefill: TransactionHistoryEntry? = nil, onDiscard: (() -> Void)? = nil, isAuthenticatedOverride: Bool? = nil) {
+        _model = State(initialValue: ContinueWalletTransactionModel(draft: draft, isManual: isManual, prefill: prefill, isAuthenticatedOverride: isAuthenticatedOverride))
         self.onDiscard = onDiscard
     }
 
@@ -91,6 +93,14 @@ struct ContinueWalletTransactionView: View {
         Binding(get: { model.manualMode }, set: { model.setManualMode($0) })
     }
 
+    private var accountBinding: Binding<String?> {
+        Binding(get: { model.selectedAccountId }, set: { model.setSelectedAccountId($0) })
+    }
+
+    private var splitwiseChoiceBinding: Binding<SplitwiseSplitOption?> {
+        Binding(get: { model.splitwiseRuntimeChoice }, set: { model.setSplitwiseRuntimeChoice($0) })
+    }
+
     private var content: some View {
         List {
             Section {
@@ -109,16 +119,15 @@ struct ContinueWalletTransactionView: View {
                     showTemplateEditor = true
                 }
 
-                DraftDetailRow(
-                    icon: "text.alignleft",
+                PayeeFieldRow(
                     title: model.mode == .ynab ? "Payee" : "Description",
-                    isIncomplete: model.payeeText.trimmingCharacters(in: .whitespaces).isEmpty
-                ) {
-                    TextField(model.mode == .ynab ? "Payee Name" : "Description", text: $model.payeeText)
-                        .multilineTextAlignment(.trailing)
-                        .submitLabel(.done)
-                }
-                .cardRowBackground()
+                    placeholder: model.mode == .ynab ? "Payee Name" : "Description",
+                    text: $model.payeeText,
+                    suggestedNames: model.suggestedPayeeNames,
+                    showsLinkToTemplate: model.showsLinkToTemplate,
+                    linkToTemplateName: model.linkToTemplateName,
+                    onLinkToTemplate: model.linkPayeeToTemplate
+                )
 
                 if model.mode == .ynab {
                     AccountPickerRow(
@@ -126,7 +135,7 @@ struct ContinueWalletTransactionView: View {
                         isResolved: model.accountResolved,
                         isLoading: model.isLoadingAccounts,
                         accounts: model.accounts,
-                        selection: $model.selectedAccountId
+                        selection: accountBinding
                     )
                     CategoryPickerRow(
                         isLoading: model.isLoadingCategories,
@@ -186,16 +195,28 @@ struct ContinueWalletTransactionView: View {
                 )
                 .navigationBarTitleDisplayMode(.inline)
             }
+            .presentationBackground(Color.sheetBackgroundColor)
         }
         .safeAreaBar(edge: .bottom) {
-            BottomBarActionButton(
-                title: model.mode == .ynab ? "Add Transaction" : "Add Expense",
-                isLoading: model.isSubmitting,
-                isDisabled: !model.canSubmit || model.isSubmitting
-            ) {
-                Task { if await model.submit() { dismiss() } }
+            // While the keyboard is up, the button is only shown once the
+            // form is actually submittable — otherwise it'd just be sitting
+            // there disabled, chasing the keyboard up the screen for no
+            // reason. Once canSubmit flips true it animates in immediately,
+            // keyboard or not.
+            if model.canSubmit || !isKeyboardVisible {
+                BottomBarActionButton(
+                    title: model.mode == .ynab ? "Add Transaction" : "Add Expense",
+                    isLoading: model.isSubmitting,
+                    isDisabled: !model.canSubmit || model.isSubmitting
+                ) {
+                    Task { if await model.submit() { dismiss() } }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.default, value: model.canSubmit)
+        .animation(.default, value: isKeyboardVisible)
+        .onKeyboardVisibilityChange($isKeyboardVisible)
     }
 
     // MARK: - Rows
@@ -209,6 +230,8 @@ struct ContinueWalletTransactionView: View {
             .font(.system(size: 50))
             .minimumScaleFactor(0.5)
             .frame(maxWidth: .infinity)
+            .dismissButtonToolbar(isFocused: $isAmountFocused)
+            .onAppear { isAmountFocused = true }
     }
 
     private var friendRow: some View {
@@ -224,7 +247,7 @@ struct ContinueWalletTransactionView: View {
 
     private var splitPickerRow: some View {
         SplitwiseSplitPickerRow(
-            choice: $model.splitwiseRuntimeChoice,
+            choice: splitwiseChoiceBinding,
             isIncomplete: model.splitwiseRuntimeChoice == nil
         )
     }

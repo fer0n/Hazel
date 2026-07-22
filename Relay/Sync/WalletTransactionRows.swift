@@ -72,6 +72,105 @@ struct AccountPickerRow: View {
     }
 }
 
+/// The payee (YNAB) / description (Splitwise) field — a plain text field
+/// plus a custom keyboard toolbar that replaces the system predictive bar
+/// with suggestions of its own. Owns the field's focus state since the
+/// toolbar content only makes sense scoped to this field being focused.
+struct PayeeFieldRow: View {
+    let title: LocalizedStringKey
+    let placeholder: LocalizedStringKey
+    @Binding var text: String
+    /// Existing auto-match payee names matching what's typed so far — see
+    /// ContinueWalletTransactionModel.suggestedPayeeNames.
+    let suggestedNames: [String]
+    /// Whether to offer "Add to <linkToTemplateName>" for the current text
+    /// — see ContinueWalletTransactionModel.showsLinkToTemplate.
+    let showsLinkToTemplate: Bool
+    /// The template that action would add to — see
+    /// ContinueWalletTransactionModel.linkToTemplateName.
+    let linkToTemplateName: String
+    let onLinkToTemplate: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        DraftDetailRow(
+            icon: "text.alignleft",
+            title: title,
+            isIncomplete: text.trimmingCharacters(in: .whitespaces).isEmpty
+        ) {
+            TextField(placeholder, text: $text)
+                .multilineTextAlignment(.trailing)
+                .submitLabel(.done)
+                .autocorrectionDisabled()
+                .keyboardType(.alphabet)
+                .focused($isFocused)
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        if isFocused {
+                            suggestionsBar
+                        }
+                    }
+                }
+        }
+        .cardRowBackground()
+    }
+
+    /// Replaces the system predictive/autocorrect bar with plain-text
+    /// suggestions (divider-separated, like the system bar's own
+    /// candidates). Always exactly 3 equally-spaced slots (like the system
+    /// bar's own 3-candidate layout) filled left to right; a slot past the
+    /// last match stays blank rather than shrinking the others, so the
+    /// dividers land in the same place regardless of how many matches there
+    /// are. "Add to <template>" always claims the leftmost slot when
+    /// matches are scarce (2 or fewer) for the currently typed text, ahead
+    /// of any real suggestions rather than filling whatever slot is left.
+    private static let suggestionSlotCount = 3
+
+    @ViewBuilder
+    private var suggestionsBar: some View {
+        if !suggestedNames.isEmpty || showsLinkToTemplate {
+            HStack(spacing: 0) {
+                ForEach(0..<Self.suggestionSlotCount, id: \.self) { index in
+                    if index > 0 {
+                        Divider()
+                    }
+                    Group {
+                        if showsLinkToTemplate, index == 0 {
+                            Button(action: onLinkToTemplate) {
+                                VStack(spacing: 1) {
+                                    Text(text.trimmingCharacters(in: .whitespaces))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                    Text("Add to \(linkToTemplateName)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            let nameIndex = showsLinkToTemplate ? index - 1 : index
+                            if nameIndex < suggestedNames.count {
+                                Button(suggestedNames[nameIndex]) {
+                                    text = suggestedNames[nameIndex]
+                                }
+                                .buttonStyle(.plain)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            } else {
+                                Color.clear
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 20)
+                }
+            }
+            .foregroundStyle(Color.foregroundColor)
+            .padding(.horizontal, 12)
+        }
+    }
+}
+
 /// The optional YNAB category for the transaction — a loading spinner while
 /// categories load, otherwise a live picker.
 struct CategoryPickerRow: View {

@@ -135,6 +135,7 @@ extension View {
                             }
                         }
                     }
+                    .presentationBackground(Color.sheetBackgroundColor)
                 }
             }
             .sheet(isPresented: Binding(
@@ -152,6 +153,7 @@ extension View {
                             }
                         }
                     }
+                    .presentationBackground(Color.sheetBackgroundColor)
                 }
             }
     }

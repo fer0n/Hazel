@@ -63,6 +63,11 @@ final class ContinueWalletTransactionModel {
     var manualMode: Mode = .ynab
     var templateChoice: String?
     var availableTemplates: [String] = []
+    /// Template name → its auto-match rules' distinct payee names, kept
+    /// alongside `availableTemplates` (same load points) so the payee
+    /// field's custom keyboard toolbar has suggestions ready without
+    /// re-reading WalletTransactionConfigStore on every keystroke.
+    private var templatePayeeNames: [String: [String]] = [:]
 
     var categories: [YNABCategory] = []
     var selectedCategoryId: String?
@@ -89,7 +94,7 @@ final class ContinueWalletTransactionModel {
 
     // MARK: Init
 
-    init(draft: TransactionDraft, isManual: Bool = false, isAuthenticatedOverride: Bool? = nil) {
+    init(draft: TransactionDraft, isManual: Bool = false, prefill: TransactionHistoryEntry? = nil, isAuthenticatedOverride: Bool? = nil) {
         self.draft = draft
         self.isManual = isManual
         self.isAuthenticatedOverride = isAuthenticatedOverride
@@ -98,15 +103,33 @@ final class ContinueWalletTransactionModel {
         // A manual entry has no shortcut-supplied merchant/amount to resolve
         // against config — it starts blank on the last-used mode, with the
         // template list and default split friend ready for either mode.
+        // Unless `prefill` is set (the "Re-add" action on a history entry),
+        // in which case every field below is seeded from that entry instead
+        // of the remembered last-used state.
         if isManual {
-            let startMode = Self.resolveManualMode(ynabAuthenticated: ynabAuth.isAuthenticated, splitwiseAuthenticated: splitwiseAuth.isAuthenticated)
+            let startMode = prefill.map { $0.service == .splitwise ? Mode.splitwise : Mode.ynab }
+                ?? Self.resolveManualMode(ynabAuthenticated: ynabAuth.isAuthenticated, splitwiseAuthenticated: splitwiseAuth.isAuthenticated)
             manualMode = startMode
             let config = WalletTransactionConfigStore.load()
             availableTemplates = Array(config.templates.keys)
+            templatePayeeNames = Self.payeeNamesByTemplate(config)
             if let defaultFriend {
                 selectedFriendId = defaultFriend.id
             }
-            splitwiseRuntimeChoice = startMode == .splitwise ? .always : .never
+            if let prefill {
+                applyPrefill(prefill)
+            } else {
+                selectedAccountId = Self.loadLastManualAccountId()
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? (startMode == .splitwise ? .always : .never)
+                // A remembered template (more specific than a bare split
+                // choice) re-applies its own category/split/friend on top of
+                // the above, same as if the user had just picked it from the
+                // row.
+                if let lastTemplate = Self.loadLastManualTemplate(), availableTemplates.contains(lastTemplate) {
+                    templateChoice = lastTemplate
+                    applyTemplate(lastTemplate)
+                }
+            }
             return
         }
 
@@ -117,6 +140,7 @@ final class ContinueWalletTransactionModel {
         case .ynabWallet(let merchant, _, let card):
             let config = WalletTransactionConfigStore.load()
             availableTemplates = Array(config.templates.keys)
+            templatePayeeNames = Self.payeeNamesByTemplate(config)
 
             var resolvedTemplateFriend: (id: Int, firstName: String, fullName: String)?
             if let info = config.resolvedMerchantInfo(for: merchant) {
@@ -128,6 +152,7 @@ final class ContinueWalletTransactionModel {
                 resolvedTemplateFriend = template?.splitwiseFriend
             } else {
                 payeeText = merchant
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? .never
             }
 
             if let accountId = config.cards[card] {
@@ -162,6 +187,7 @@ final class ContinueWalletTransactionModel {
 
             let config = WalletTransactionConfigStore.load()
             availableTemplates = Array(config.templates.keys)
+            templatePayeeNames = Self.payeeNamesByTemplate(config)
 
             if let info = config.resolvedMerchantInfo(for: merchant) {
                 templateChoice = info.templateName
@@ -175,7 +201,51 @@ final class ContinueWalletTransactionModel {
                 }
             } else {
                 payeeText = merchant
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? .always
             }
+        }
+    }
+
+    /// Seeds every field from a previously-created transaction/expense —
+    /// backs the "Re-add" action on ContentView's recent-transactions list,
+    /// which opens this sheet pre-filled instead of resubmitting silently,
+    /// so the user can review or tweak it (a different amount, account,
+    /// category, ...) before it's actually created again.
+    private func applyPrefill(_ entry: TransactionHistoryEntry) {
+        switch entry.payload {
+        case .ynabTransaction(let transaction):
+            amountText = (abs(Double(transaction.amount)) / 1000).asMoneyString
+            payeeText = transaction.payeeName
+            // Left editable (accountResolved stays false, the AccountPickerRow's
+            // default) rather than shown as a static label, unlike a
+            // shortcut-resolved card mapping — a re-add should be reviewable.
+            selectedAccountId = transaction.accountId
+            selectedCategoryId = transaction.categoryId
+        case .splitwiseExpense(let expense):
+            amountText = (Double(expense.costCents) / 100).asMoneyString
+            payeeText = expense.description
+        }
+
+        let splitExpense: SplitwiseExpenseRequest?
+        if let split = entry.split {
+            splitExpense = split.expense
+        } else if case .splitwiseExpense(let expense) = entry.payload {
+            splitExpense = expense
+        } else {
+            splitExpense = nil
+        }
+        guard let splitExpense else {
+            splitwiseRuntimeChoice = .never
+            return
+        }
+        templateHasFriend = false
+        templateFriend = nil
+        selectedFriendId = splitExpense.friendUserId
+        if splitExpense.payerOwedCents == splitExpense.costCents / 2 {
+            splitwiseRuntimeChoice = .always
+        } else {
+            splitwiseRuntimeChoice = .manual
+            ownShareText = String(Double(splitExpense.payerOwedCents) / 100)
         }
     }
 
@@ -287,6 +357,53 @@ final class ContinueWalletTransactionModel {
         UserDefaults.standard.set(mode.rawValue, forKey: lastManualModeKey)
     }
 
+    // MARK: Manual account / split persistence
+
+    /// Explicit setter (bound in the view instead of the plain property) so
+    /// a manual entry's account choice is remembered for next time. No-op
+    /// for shortcut-started drafts, where the account instead comes from
+    /// WalletTransactionConfigStore's per-card mapping.
+    func setSelectedAccountId(_ id: String?) {
+        selectedAccountId = id
+        guard isManual else { return }
+        Self.saveLastManualAccountId(id)
+    }
+
+    /// Explicit setter (bound in the view instead of the plain property) so
+    /// the split choice is remembered for next time — regardless of
+    /// manual vs. shortcut-started, unlike the account/template
+    /// equivalents below, since a *new* merchant with no resolved
+    /// template (see init()) falls back to this instead of a fixed
+    /// per-mode default forever.
+    func setSplitwiseRuntimeChoice(_ choice: SplitwiseSplitOption?) {
+        splitwiseRuntimeChoice = choice
+        Self.saveLastSplitChoice(choice)
+    }
+
+    private static let lastManualAccountIdKey = "lastManualTransactionAccountId"
+    private static func loadLastManualAccountId() -> String? {
+        UserDefaults.standard.string(forKey: lastManualAccountIdKey)
+    }
+    private static func saveLastManualAccountId(_ id: String?) {
+        UserDefaults.standard.set(id, forKey: lastManualAccountIdKey)
+    }
+
+    private static let lastSplitChoiceKey = "lastManualTransactionSplitChoice"
+    private static func loadLastSplitChoice() -> SplitwiseSplitOption? {
+        UserDefaults.standard.string(forKey: lastSplitChoiceKey).flatMap(SplitwiseSplitOption.init(rawValue:))
+    }
+    private static func saveLastSplitChoice(_ choice: SplitwiseSplitOption?) {
+        UserDefaults.standard.set(choice?.rawValue, forKey: lastSplitChoiceKey)
+    }
+
+    private static let lastManualTemplateKey = "lastManualTransactionTemplate"
+    private static func loadLastManualTemplate() -> String? {
+        UserDefaults.standard.string(forKey: lastManualTemplateKey)
+    }
+    private static func saveLastManualTemplate(_ name: String?) {
+        UserDefaults.standard.set(name, forKey: lastManualTemplateKey)
+    }
+
     // MARK: Template application
 
     /// Re-applies the fields a chosen template controls — category (YNAB
@@ -294,8 +411,12 @@ final class ContinueWalletTransactionModel {
     /// per-mode defaults when the selection is cleared ("Create New"). The
     /// only mode-specific bits are that YNAB owns the category and that a
     /// from-scratch entry defaults to splitting every time on Splitwise but
-    /// never on YNAB.
+    /// never on YNAB. Also persists the choice for a manual entry so the
+    /// next one reopens on the same template (see loadLastManualTemplate).
     func applyTemplate(_ name: String?) {
+        if isManual {
+            Self.saveLastManualTemplate(name)
+        }
         let config = WalletTransactionConfigStore.load()
         let template = name.flatMap { config.templates[$0] }
         withAnimation {
@@ -324,8 +445,80 @@ final class ContinueWalletTransactionModel {
     func templateSaved(_ name: String) {
         let config = WalletTransactionConfigStore.load()
         availableTemplates = Array(config.templates.keys)
+        templatePayeeNames = Self.payeeNamesByTemplate(config)
         templateChoice = name
         applyTemplate(name)
+    }
+
+    private static func payeeNamesByTemplate(_ config: WalletTransactionConfig) -> [String: [String]] {
+        config.templates.mapValues { Array(Set($0.autoMatch.map(\.payeeName))).sorted() }
+    }
+
+    /// Payee-name suggestions for the payee field's custom keyboard toolbar
+    /// — the selected template's own auto-match payee names first (so they
+    /// win the limited slots), followed by every other template's (deduped
+    /// against the selected one's), filtered down to what's already been
+    /// typed (like a normal autocomplete) so there's always something to
+    /// pick from instead of retyping an already-known payee.
+    var suggestedPayeeNames: [String] {
+        let ownNames = templateChoice.flatMap { templatePayeeNames[$0] } ?? []
+        let otherNames = Array(Set(templatePayeeNames.values.flatMap { $0 }).subtracting(ownNames)).sorted()
+        let names = ownNames + otherNames
+        let typed = payeeText.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return names }
+        return names.filter { $0.localizedStandardContains(typed) }
+    }
+
+    /// Whether the payee field's typed text is worth offering a quick
+    /// "Add to <template>" action for — few enough existing matches that
+    /// this looks like a new/rare payee rather than one already covered by
+    /// an auto-match rule. Also false once a rule for this exact text
+    /// already exists, since linking again would just add a duplicate.
+    var showsLinkToTemplate: Bool {
+        let typed = payeeText.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return false }
+        let names = suggestedPayeeNames
+        guard !names.contains(where: { $0.caseInsensitiveCompare(typed) == .orderedSame }) else { return false }
+        return names.count <= 2
+    }
+
+    /// The template `linkPayeeToTemplate` would attach its rule to — the
+    /// selected template, or (matching that method's own fallback) a new
+    /// one named after the payee when none is selected yet. Exposed so the
+    /// "Add to <name>" action's label can name the actual target.
+    var linkToTemplateName: String {
+        templateChoice ?? payeeText.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Adds an auto-match rule (pattern == payee name, both the current
+    /// typed text) to the selected template — or a new template named
+    /// after the payee, same as the "create a new template" path submit()
+    /// already takes when none is selected — so this exact payee resolves
+    /// automatically next time instead of needing to be retyped. Unlike
+    /// that submit-time path (which only maps the shortcut-supplied
+    /// merchant string), this works for manual entries too, which have no
+    /// merchant string to map.
+    func linkPayeeToTemplate() {
+        let trimmed = payeeText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let templateName = linkToTemplateName
+        var config = WalletTransactionConfigStore.load()
+        var template = config.templates[templateName] ?? WalletTransactionConfig.Template()
+        let rule = WalletTransactionConfig.AutoMatchRule(pattern: trimmed, payeeName: trimmed)
+        guard !template.autoMatch.contains(rule) else { return }
+        template.autoMatch.append(rule)
+        config.templates[templateName] = template
+        do {
+            try WalletTransactionConfigStore.save(config)
+        } catch {
+            logger.error("failed to link payee to template: \(String(describing: error), privacy: .public)")
+            return
+        }
+        if templateChoice == nil {
+            availableTemplates = Array(config.templates.keys)
+            templateChoice = templateName
+        }
+        templatePayeeNames = Self.payeeNamesByTemplate(config)
     }
 
     // MARK: Loading

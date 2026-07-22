@@ -12,10 +12,14 @@ struct ContentView: View {
     @State private var drafts = TransactionDraftStore.load()
     @State private var fileImportCount = Self.loadFileImportCount()
     @State private var history = TransactionHistoryStore.load()
-    @State private var readdAlert: ReaddAlert?
     @State private var path: [ContentRoute] = []
     @State private var continueDraft: TransactionDraft?
     @State private var manualDraft: TransactionDraft?
+    /// Set alongside `manualDraft` by the "Re-add" context menu action so
+    /// the manual-entry sheet opens pre-filled with that history entry's
+    /// fields instead of blank. Nil (the "+" button's case) presents the
+    /// usual empty form.
+    @State private var manualPrefillEntry: TransactionHistoryEntry?
     @State private var selectedHistoryEntry: TransactionHistoryEntry?
     @State private var showSettings = false
     @State private var showOnboarding = false
@@ -36,12 +40,6 @@ struct ContentView: View {
     @State private var opensAutomationTutorialAfterSettings = false
     @State private var importSheetContent: ImportSheetContent?
     @Environment(\.scenePhase) private var scenePhase
-
-    private struct ReaddAlert: Identifiable {
-        let id = UUID()
-        let title: String
-        let message: String
-    }
 
     /// What the single file-import sheet should show — a just-shared file
     /// (`sharedFile`) or reopening an already-staged import (`review`).
@@ -109,7 +107,7 @@ struct ContentView: View {
                         Spacer()
 
                         Button {
-                            manualDraft = TransactionDraft(id: UUID(), startedAt: Date(), payload: .ynabWallet(merchant: "", amount: 0, card: ""))
+                            startManualEntry(prefill: nil)
                         } label: {
                             Image(systemName: "plus")
                                 .fontWeight(.bold)
@@ -218,7 +216,7 @@ struct ContentView: View {
                             .cardRowBackground()
                             .contextMenu {
                                 Button {
-                                    readd(entry)
+                                    startManualEntry(prefill: entry)
                                 } label: {
                                     Label("Re-add", systemImage: "arrow.clockwise")
                                 }
@@ -341,17 +339,32 @@ struct ContentView: View {
                 NavigationStack {
                     TransactionDetailView(source: .draft(id: draft.id))
                 }
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(item: $manualDraft, onDismiss: reloadMainListState) { draft in
-                NavigationStack {
-                    ContinueWalletTransactionView(draft: draft, isManual: true)
+                // A re-add has no matched transition source (unlike the "+"
+                // button) — zooming from the "+" button regardless of which
+                // history row triggered it would look wrong, so that
+                // transition only applies to a from-scratch entry.
+                Group {
+                    if manualPrefillEntry == nil {
+                        NavigationStack {
+                            ContinueWalletTransactionView(draft: draft, isManual: true, prefill: manualPrefillEntry)
+                        }
+                        .navigationTransition(.zoom(sourceID: "add", in: addNamespace))
+                    } else {
+                        NavigationStack {
+                            ContinueWalletTransactionView(draft: draft, isManual: true, prefill: manualPrefillEntry)
+                        }
+                    }
                 }
-                .navigationTransition(.zoom(sourceID: "add", in: addNamespace))
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(item: $selectedHistoryEntry) { entry in
                 NavigationStack {
                     TransactionDetailView(source: .history(entry))
                 }
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(item: $importSheetContent) { content in
                 NavigationStack {
@@ -368,6 +381,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(isPresented: $showSettings, onDismiss: {
                 if opensOnboardingAfterSettings {
@@ -388,6 +402,7 @@ struct ContentView: View {
                     }
                 )
                 .navigationTransition(.zoom(sourceID: "settings", in: settingsNamespace))
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(isPresented: $showOnboarding, onDismiss: {
                 // Only reached via the last page's button (interactive
@@ -405,24 +420,17 @@ struct ContentView: View {
                     opensAutomationTutorialAfterOnboarding = true
                 })
                 .interactiveDismissDisabled()
+                .presentationBackground(Color.sheetBackgroundColor)
             }
             .sheet(isPresented: $showAutomationTutorial) {
                 AutomationTutorialView()
+                    .presentationBackground(Color.sheetBackgroundColor)
             }
             .onAppear {
                 if !UserDefaults.standard.bool(forKey: Self.hasCompletedOnboardingKey) {
                     showOnboarding = true
                 }
                 reloadMainListState()
-            }
-            .alert(
-                readdAlert?.title ?? "",
-                isPresented: Binding(get: { readdAlert != nil }, set: { if !$0 { readdAlert = nil } }),
-                presenting: readdAlert
-            ) { _ in
-                Button("OK", role: .cancel) { }
-            } message: { alert in
-                Text(alert.message)
             }
     }
 
@@ -439,26 +447,12 @@ struct ContentView: View {
         )
     }
 
-    private func readd(_ entry: TransactionHistoryEntry) {
-        Task {
-            do {
-                let outcome = try await entry.readd()
-                withAnimation {
-                    history = TransactionHistoryStore.load()
-                }
-                if case .queued = outcome {
-                    readdAlert = ReaddAlert(
-                        title: "Queued",
-                        message: "You're offline — this will sync automatically once you're back online."
-                    )
-                }
-            } catch {
-                let message = (error as? YNABIntentError).map { String(localized: $0.localizedStringResource) }
-                    ?? (error as? SplitwiseIntentError).map { String(localized: $0.localizedStringResource) }
-                    ?? "Couldn't re-add the transaction."
-                readdAlert = ReaddAlert(title: "Couldn't Re-add", message: message)
-            }
-        }
+    /// Opens the manual-entry sheet, blank for the "+" button (`prefill:
+    /// nil`) or seeded with a history entry's fields for "Re-add" — either
+    /// way the user reviews/edits before it's actually submitted.
+    private func startManualEntry(prefill: TransactionHistoryEntry?) {
+        manualPrefillEntry = prefill
+        manualDraft = TransactionDraft(id: UUID(), startedAt: Date(), payload: .ynabWallet(merchant: "", amount: 0, card: ""))
     }
 }
 
