@@ -148,7 +148,7 @@ final class ContinueWalletTransactionModel {
                 payeeText = info.payeeName
                 let template = config.templates[info.templateName]
                 selectedCategoryId = template?.categoryId
-                splitwiseRuntimeChoice = (template?.splitwiseOption ?? .never).splitRuntimeChoice
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? (template?.splitwiseOption ?? .never).splitRuntimeChoice
                 resolvedTemplateFriend = template?.splitwiseFriend
             } else {
                 payeeText = merchant
@@ -193,7 +193,7 @@ final class ContinueWalletTransactionModel {
                 templateChoice = info.templateName
                 payeeText = info.payeeName
                 let template = config.templates[info.templateName]
-                splitwiseRuntimeChoice = (template?.splitwiseOption ?? .never).splitRuntimeChoice
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? (template?.splitwiseOption ?? .never).splitRuntimeChoice
                 if let friend = template?.splitwiseFriend {
                     templateHasFriend = true
                     templateFriend = SplitwiseFriendEntity(templateFriend: friend)
@@ -372,9 +372,10 @@ final class ContinueWalletTransactionModel {
     /// Explicit setter (bound in the view instead of the plain property) so
     /// the split choice is remembered for next time — regardless of
     /// manual vs. shortcut-started, unlike the account/template
-    /// equivalents below, since a *new* merchant with no resolved
-    /// template (see init()) falls back to this instead of a fixed
-    /// per-mode default forever.
+    /// equivalents below. This global "last used" value takes priority
+    /// over a resolved template's own saved splitwiseOption (see init()
+    /// and applyTemplate()) — it's only a per-merchant *initial* default,
+    /// not a floor the global choice can't override.
     func setSplitwiseRuntimeChoice(_ choice: SplitwiseSplitOption?) {
         splitwiseRuntimeChoice = choice
         Self.saveLastSplitChoice(choice)
@@ -411,8 +412,11 @@ final class ContinueWalletTransactionModel {
     /// per-mode defaults when the selection is cleared ("Create New"). The
     /// only mode-specific bits are that YNAB owns the category and that a
     /// from-scratch entry defaults to splitting every time on Splitwise but
-    /// never on YNAB. Also persists the choice for a manual entry so the
-    /// next one reopens on the same template (see loadLastManualTemplate).
+    /// never on YNAB — both are only fallbacks for when there's no
+    /// remembered global split choice yet (loadLastSplitChoice), which
+    /// otherwise wins over the template's own saved splitwiseOption. Also
+    /// persists the choice for a manual entry so the next one reopens on
+    /// the same template (see loadLastManualTemplate).
     func applyTemplate(_ name: String?) {
         if isManual {
             Self.saveLastManualTemplate(name)
@@ -424,9 +428,9 @@ final class ContinueWalletTransactionModel {
                 selectedCategoryId = template?.categoryId
             }
             if name == nil {
-                splitwiseRuntimeChoice = mode == .splitwise ? .always : .never
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? (mode == .splitwise ? .always : .never)
             } else {
-                splitwiseRuntimeChoice = (template?.splitwiseOption ?? .never).splitRuntimeChoice
+                splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? (template?.splitwiseOption ?? .never).splitRuntimeChoice
             }
             if let friend = template?.splitwiseFriend {
                 templateHasFriend = true
