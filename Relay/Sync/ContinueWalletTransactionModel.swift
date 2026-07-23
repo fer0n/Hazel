@@ -53,8 +53,18 @@ final class ContinueWalletTransactionModel {
 
     // MARK: Fields
 
-    /// Payee (YNAB draft) or expense description (Splitwise draft).
+    /// Payee name. For a YNAB draft this is the YNAB payee; for a Splitwise
+    /// draft it's the merchant's clean name (stored as the merchant→template
+    /// `payeeName` and used as the auto-match rule name). A shortcut-started
+    /// Splitwise draft leaves it blank for an unknown merchant so its
+    /// placeholder (the raw merchant) shows, falling back to that merchant
+    /// via `splitwisePayeeName`.
     var payeeText = ""
+    /// The Splitwise expense description, shown below the Payee field on a
+    /// shortcut-started Splitwise draft. Blank means "use the payee name" —
+    /// its placeholder mirrors `splitwisePayeeName`. Unused for YNAB drafts;
+    /// a manual Splitwise entry keeps its single field bound to `payeeText`.
+    var descriptionText = ""
     /// Raw amount text — only used for a manual entry (isManual); a
     /// shortcut-started draft's amount comes fixed from the payload.
     var amountText = ""
@@ -200,7 +210,10 @@ final class ContinueWalletTransactionModel {
                     selectedFriendId = friend.id
                 }
             } else {
-                payeeText = merchant
+                // Unknown merchant: leave the Payee field blank so its
+                // placeholder (the raw merchant) shows; splitwisePayeeName
+                // falls back to that merchant when it's left untouched.
+                payeeText = ""
                 splitwiseRuntimeChoice = Self.loadLastSplitChoice() ?? .always
             }
         }
@@ -290,14 +303,18 @@ final class ContinueWalletTransactionModel {
 
     var canSubmit: Bool {
         if isManual, manualAmount == nil { return false }
-        if payeeText.trimmingCharacters(in: .whitespaces).isEmpty { return false }
         switch mode {
         case .ynab:
+            if payeeText.trimmingCharacters(in: .whitespaces).isEmpty { return false }
             if selectedAccountId == nil { return false }
             if splitwiseAuth.isAuthenticated, splitwiseRuntimeChoice == nil { return false }
             if resolvedSplitwiseAction != .never, selectedFriendId == nil && defaultFriend == nil { return false }
             if resolvedSplitwiseAction == .manual, Double(ownShareText) == nil { return false }
         case .splitwise:
+            // A shortcut draft's description falls back to the merchant, so a
+            // blank Payee/Description is fine; a manual entry has no merchant
+            // and must supply one (its single field binds to payeeText).
+            if splitwiseDescription.isEmpty { return false }
             if selectedFriendId == nil && defaultFriend == nil { return false }
             if splitwiseRuntimeChoice == nil { return false }
             if resolvedSplitwiseAction == .manual, Double(ownShareText) == nil { return false }
@@ -317,6 +334,23 @@ final class ContinueWalletTransactionModel {
 
     var resolvedFriendName: String? {
         templateHasFriend ? templateFriend?.fullName : nil
+    }
+
+    /// The payee name a Splitwise expense stores for its merchant — the typed
+    /// Payee field, or the raw merchant when the field is left on its
+    /// placeholder. For a manual entry (no merchant) this is just the typed
+    /// text, which the single field binds to `payeeText`.
+    var splitwisePayeeName: String {
+        let typed = payeeText.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? draft.merchant : typed
+    }
+
+    /// The Splitwise expense description — the typed Description field, or the
+    /// effective payee name when the field is left on its placeholder. Also
+    /// the value the Description field shows as its (grayed) placeholder.
+    var splitwiseDescription: String {
+        let typed = descriptionText.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? splitwisePayeeName : typed
     }
 
     // MARK: Manual mode
@@ -687,6 +721,13 @@ final class ContinueWalletTransactionModel {
             config.templates[trimmedPayee] = template
             config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(payeeName: trimmedPayee, templateName: trimmedPayee)
             configChanged = true
+        } else if !isManual, let templateChoice {
+            // Known merchant — persist an edited payee (or a template change)
+            // so it's corrected automatically next time, matching the
+            // Splitwise flow. No-op when nothing changed.
+            if config.linkMerchantIfChanged(merchant: merchant, payeeName: finalPayeeName, templateName: templateChoice) {
+                configChanged = true
+            }
         }
 
         guard let accountId = selectedAccountId else {
@@ -804,13 +845,27 @@ final class ContinueWalletTransactionModel {
         var config = WalletTransactionConfigStore.load()
         var configChanged = false
 
-        let trimmedDescription = payeeText.trimmingCharacters(in: .whitespaces)
-        guard !trimmedDescription.isEmpty else {
+        // The expense description and the merchant's stored payee name are now
+        // separate fields (the Payee field drives the mapping name; the
+        // Description field is the expense text). Blank fields fall back per
+        // splitwisePayeeName / splitwiseDescription.
+        let finalDescription = splitwiseDescription
+        guard !finalDescription.isEmpty else {
             errorMessage = "Description can't be empty."
             return false
         }
-        let finalDescription = trimmedDescription
-        let finalTemplateName = templateChoice ?? trimmedDescription
+        let finalPayeeName = splitwisePayeeName
+        let finalTemplateName: String
+        if let templateChoice {
+            finalTemplateName = templateChoice
+        } else if !isManual {
+            // No template picked for a shortcut-started draft — file it under
+            // the default Splitwise template (created on demand) rather than
+            // spawning a per-payee template, matching the intent's flow.
+            finalTemplateName = config.ensureSplitwiseDefaultTemplate()
+        } else {
+            finalTemplateName = finalPayeeName
+        }
 
         let finalFriendId: Int
         let finalFriendFirstName: String
@@ -829,24 +884,18 @@ final class ContinueWalletTransactionModel {
             finalFriendFullName = match.fullName
         }
 
-        if !isManual, templateChoice == nil {
-            // Creating new template
-            var template = config.templates[finalTemplateName] ?? WalletTransactionConfig.Template()
-            template.splitwiseFriendId = finalFriendId
-            template.splitwiseFriendFirstName = finalFriendFirstName
-            template.splitwiseFriendFullName = finalFriendFullName
-            template.splitwiseOption = SplitwiseTemplateOption(splitRuntimeChoice: splitwiseRuntimeChoice)
-            config.templates[finalTemplateName] = template
-            config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(payeeName: finalDescription, templateName: finalTemplateName)
-            configChanged = true
-        } else if !isManual, !templateHasFriend {
-            // Existing template but no cached friend — save the picked friend
-            var template = config.templates[finalTemplateName] ?? WalletTransactionConfig.Template()
-            template.splitwiseFriendId = finalFriendId
-            template.splitwiseFriendFirstName = finalFriendFirstName
-            template.splitwiseFriendFullName = finalFriendFullName
-            config.templates[finalTemplateName] = template
-            configChanged = true
+        if !isManual {
+            // File the merchant under its template and cache the friend. The
+            // (default) template's split option is left as-is — it stays
+            // `.ask` so it keeps prompting; the one-shot runtime choice here
+            // isn't a persistent setting. Re-links the merchant when the Payee
+            // was edited, so the correction is applied automatically next time.
+            configChanged = config.recordSplitwiseMerchantLink(
+                merchant: merchant,
+                payeeName: finalPayeeName,
+                templateName: finalTemplateName,
+                friend: (id: finalFriendId, firstName: finalFriendFirstName, fullName: finalFriendFullName)
+            )
         }
 
         if configChanged {

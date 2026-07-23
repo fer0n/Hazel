@@ -119,17 +119,8 @@ struct ContinueWalletTransactionView: View {
                     showTemplateEditor = true
                 }
 
-                PayeeFieldRow(
-                    title: model.mode == .ynab ? "Payee" : "Description",
-                    placeholder: model.mode == .ynab ? "Payee Name" : "Description",
-                    text: $model.payeeText,
-                    suggestedNames: model.suggestedPayeeNames,
-                    showsLinkToTemplate: model.showsLinkToTemplate,
-                    linkToTemplateName: model.linkToTemplateName,
-                    onLinkToTemplate: model.linkPayeeToTemplate
-                )
-
                 if model.mode == .ynab {
+                    payeeTextRow(title: "Payee", placeholder: String(localized: "Payee Name"))
                     AccountPickerRow(
                         cardName: model.cardName,
                         isResolved: model.accountResolved,
@@ -143,8 +134,19 @@ struct ContinueWalletTransactionView: View {
                         selection: $model.selectedCategoryId
                     )
                 } else {
-                    // Splitwise-primary: friend/split/share live alongside
-                    // the description since they *are* the transaction.
+                    // Splitwise-primary: a shortcut draft splits the one field
+                    // into Payee (the merchant's clean name, stored on the
+                    // merchant→template mapping) and Description (the expense
+                    // text, defaulting to the payee). A manual entry has no
+                    // merchant to name, so it keeps the single Description
+                    // field. Friend/split/share follow since they *are* the
+                    // transaction.
+                    if model.isManual {
+                        payeeTextRow(title: "Description", placeholder: String(localized: "Description"))
+                    } else {
+                        payeeTextRow(title: "Payee", placeholder: model.draft.merchant, allowsEmpty: true)
+                        descriptionRow
+                    }
                     friendRow
                     splitPickerRow
                     if model.resolvedSplitwiseAction == .manual {
@@ -232,6 +234,40 @@ struct ContinueWalletTransactionView: View {
             .frame(maxWidth: .infinity)
             .dismissButtonToolbar(isFocused: $isAmountFocused)
             .onAppear { isAmountFocused = true }
+    }
+
+    /// The `payeeText`-bound text field with its auto-match suggestion bar —
+    /// the YNAB payee, the Splitwise Payee, or a manual Splitwise entry's
+    /// single Description field. `allowsEmpty` lets the shortcut Splitwise
+    /// Payee fall back to its merchant placeholder without being flagged.
+    private func payeeTextRow(title: LocalizedStringKey, placeholder: String, allowsEmpty: Bool = false) -> some View {
+        PayeeFieldRow(
+            title: title,
+            placeholder: placeholder,
+            text: $model.payeeText,
+            suggestedNames: model.suggestedPayeeNames,
+            showsLinkToTemplate: model.showsLinkToTemplate,
+            linkToTemplateName: model.linkToTemplateName,
+            onLinkToTemplate: model.linkPayeeToTemplate,
+            allowsEmpty: allowsEmpty
+        )
+    }
+
+    /// The Splitwise expense Description field (shortcut drafts only). No
+    /// suggestion bar — payee-name autocomplete belongs to the Payee field
+    /// above it — and its placeholder mirrors the effective payee so leaving
+    /// it blank files the expense under that name.
+    private var descriptionRow: some View {
+        PayeeFieldRow(
+            title: "Description",
+            placeholder: model.splitwisePayeeName,
+            text: $model.descriptionText,
+            suggestedNames: [],
+            showsLinkToTemplate: false,
+            linkToTemplateName: "",
+            onLinkToTemplate: {},
+            allowsEmpty: true
+        )
     }
 
     private var friendRow: some View {

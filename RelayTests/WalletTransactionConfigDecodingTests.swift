@@ -1,0 +1,81 @@
+//
+//  WalletTransactionConfigDecodingTests.swift
+//  RelayTests
+//
+//  Regression coverage for the data-loss bug where adding a new non-optional
+//  stored property (`isSplitwiseDefault`) to WalletTransactionConfig.Template
+//  made every config written by an older build fail to decode — the
+//  compiler-synthesized decoder throws `keyNotFound` for a missing key rather
+//  than using the property's default value, and one failed Template decode
+//  fails the whole config, wiping every template/merchant/card on load. The
+//  tolerant `init(from:)` on Template is what these guard.
+//
+
+import Foundation
+import Testing
+@testable import Relay
+
+@MainActor
+struct WalletTransactionConfigDecodingTests {
+    /// A config exactly as an older build (before `isSplitwiseDefault`
+    /// existed) would have written it — no `isSplitwiseDefault` key anywhere.
+    private static let legacyJSON = """
+    {
+      "merchants": {
+        "REWE SAGT DANKE": { "payeeName": "Rewe", "templateName": "Groceries" }
+      },
+      "templates": {
+        "Groceries": {
+          "autoMatch": [ { "pattern": "REWE.*", "payeeName": "Rewe" } ],
+          "splitwiseOption": "ask",
+          "splitwiseFriendId": 42,
+          "splitwiseFriendFirstName": "Sam",
+          "splitwiseFriendFullName": "Sam Rivera"
+        }
+      },
+      "cards": { "Visa": "acct-1" }
+    }
+    """
+
+    @Test
+    func decodesConfigWrittenBeforeIsSplitwiseDefaultExisted() throws {
+        let config = try JSONDecoder().decode(WalletTransactionConfig.self, from: Data(Self.legacyJSON.utf8))
+
+        // The whole point: a missing new key must not wipe existing data.
+        #expect(config.templates.count == 1)
+        #expect(config.merchants.count == 1)
+        #expect(config.cards["Visa"] == "acct-1")
+
+        let template = try #require(config.templates["Groceries"])
+        #expect(template.isSplitwiseDefault == false)
+        #expect(template.splitwiseOption == .ask)
+        #expect(template.autoMatch == [.init(pattern: "REWE.*", payeeName: "Rewe")])
+        #expect(template.splitwiseFriend?.id == 42)
+        #expect(template.splitwiseFriend?.fullName == "Sam Rivera")
+    }
+
+    @Test
+    func ensureSplitwiseDefaultTemplateCreatesAskTemplateAndIsIdempotent() {
+        var config = WalletTransactionConfig()
+
+        let name = config.ensureSplitwiseDefaultTemplate()
+        #expect(config.templates[name]?.isSplitwiseDefault == true)
+        #expect(config.templates[name]?.splitwiseOption == .ask)
+
+        // A second call returns the same template rather than adding another.
+        let again = config.ensureSplitwiseDefaultTemplate()
+        #expect(again == name)
+        #expect(config.templates.count == 1)
+    }
+
+    @Test
+    func isSplitwiseDefaultSurvivesEncodeDecodeRoundTrip() throws {
+        var config = WalletTransactionConfig()
+        _ = config.ensureSplitwiseDefaultTemplate()
+
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(WalletTransactionConfig.self, from: data)
+
+        #expect(decoded.templates.values.filter(\.isSplitwiseDefault).count == 1)
+    }
+}

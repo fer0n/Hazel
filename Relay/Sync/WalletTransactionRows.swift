@@ -78,7 +78,11 @@ struct AccountPickerRow: View {
 /// toolbar content only makes sense scoped to this field being focused.
 struct PayeeFieldRow: View {
     let title: LocalizedStringKey
-    let placeholder: LocalizedStringKey
+    /// A plain `String` (not a `LocalizedStringKey`) so callers can pass a
+    /// runtime value — the Splitwise Description field uses the effective
+    /// payee name as its placeholder so leaving it blank files the expense
+    /// under that name.
+    let placeholder: String
     @Binding var text: String
     /// Existing auto-match payee names matching what's typed so far — see
     /// ContinueWalletTransactionModel.suggestedPayeeNames.
@@ -90,6 +94,10 @@ struct PayeeFieldRow: View {
     /// ContinueWalletTransactionModel.linkToTemplateName.
     let linkToTemplateName: String
     let onLinkToTemplate: () -> Void
+    /// When true, a blank field isn't flagged incomplete — used by the
+    /// Splitwise Payee/Description fields, which fall back to the merchant /
+    /// effective-payee shown in their placeholder rather than requiring input.
+    var allowsEmpty: Bool = false
 
     @FocusState private var isFocused: Bool
 
@@ -97,7 +105,7 @@ struct PayeeFieldRow: View {
         DraftDetailRow(
             icon: "text.alignleft",
             title: title,
-            isIncomplete: text.trimmingCharacters(in: .whitespaces).isEmpty
+            isIncomplete: !allowsEmpty && text.trimmingCharacters(in: .whitespaces).isEmpty
         ) {
             TextField(placeholder, text: $text)
                 .multilineTextAlignment(.trailing)

@@ -6,25 +6,30 @@
 //  purely for shared expenses: wired as the action of a Shortcuts
 //  "Transaction" Personal Automation (receiving Merchant/Amount magic
 //  variables), but creates a Splitwise expense directly — no YNAB
-//  transaction at all. Remembers merchant -> friend/split-mode via the same
-//  per-merchant "template" pattern as the YNAB intent, backed by the same
-//  WalletTransactionConfigStore — a template created by either intent works
-//  for both, so the same bucket (e.g. "Supermarkt") can be used whether a
-//  given transaction goes to YNAB, straight to Splitwise, or both.
+//  transaction at all. Backed by the same WalletTransactionConfigStore the
+//  YNAB intent uses, so a template edited in-app works for both.
 //
-//  Unlike AddWalletTransactionToYNABIntent (where the friend is asked live
-//  whenever the template doesn't already have one, since splitting is a
-//  side effect of a YNAB transaction there), this intent's whole point is
-//  splitting — so a friend it has to ask for gets written back onto the
-//  template once resolved, fixing it for next time rather than re-asking.
+//  Unlike the YNAB intent — where a template is worth building up front
+//  (category, account, split mode) — a Splitwise expense only needs a memo
+//  + amount + split yes/no, so this intent never asks the user to set a
+//  template up. An unknown merchant is auto-filed under the default
+//  Splitwise template (WalletTransactionConfig.ensureSplitwiseDefaultTemplate,
+//  split option `.ask`), its description defaults to the merchant name, and
+//  the only live question is the split yes/no. Customizing — renaming the
+//  description, a second "Don't Split" template, moving merchants, auto-match
+//  rules — is all done later in Relay's Templates screen, not here.
+//
+//  The friend is asked once (when neither the template nor the app-wide
+//  default friend supplies one) and written back onto the template, fixing
+//  it for next time rather than re-asking.
 //
 //  Built entirely with the async requestValue/requestDisambiguation style
 //  (perform() never restarts, so there's no duplicate-expense risk from a
 //  restart). requestValue params must stay listed in parameterSummary —
 //  on iOS 18+ it throws a connection error otherwise (see the equivalent
-//  note in AddWalletTransactionToYNABIntent.swift) — while
-//  requestDisambiguation params (friendOverride, splitOptionOverride) are
-//  resolved with their candidates passed inline, so they can stay hidden.
+//  note in AddWalletTransactionToYNABIntent.swift) — while the
+//  requestDisambiguation param (friendOverride) is resolved with its
+//  candidates passed inline, so it can stay hidden.
 //
 
 import AppIntents
@@ -44,26 +49,11 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
     @Parameter(title: "Amount")
     var amount: Double
 
-    @Parameter(title: "Template", optionsProvider: TemplateOptionsProvider())
-    var templateChoice: String?
-
-    @Parameter(title: "Template Name")
-    var newTemplateName: String?
-
-    @Parameter(title: "Description")
-    var descriptionOverride: String?
-
-    @Parameter(title: "Auto-Match Pattern")
-    var autoMatchPattern: String?
-
     @Parameter(title: "Split With")
     var friendOverride: SplitwiseFriendEntity?
 
     @Parameter(title: "If Split With Isn't Set", default: .defaultFriend)
     var splitwiseFriendFallback: SplitwiseFriendFallback
-
-    @Parameter(title: "Split")
-    var splitOptionOverride: SplitwiseTemplateOption?
 
     @Parameter(title: "Your Share", description: "Only used when Split is Manual")
     var splitwiseOwnShare: Double?
@@ -87,10 +77,6 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
 
     static var parameterSummary: some ParameterSummary {
         Summary("Add \(\.$amount) Splitwise expense for \(\.$merchant)") {
-            \.$templateChoice
-            \.$newTemplateName
-            \.$descriptionOverride
-            \.$autoMatchPattern
             \.$friendOverride
             \.$splitwiseFriendFallback
             \.$splitwiseOwnShare
@@ -187,97 +173,43 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     changed = true
                 }
             } else {
-                let resolvedTemplateChoice: String
-                if let templateChoice {
-                    resolvedTemplateChoice = templateChoice
-                } else {
-                    logger.log("no merchant match — requesting template choice")
-                    let prompt = String(format: String(localized: "Which template for \"%@\"?"), merchant)
-                    resolvedTemplateChoice = try await $templateChoice.requestValue(IntentDialog(stringLiteral: prompt))
-                    touchDraft()
-                }
-
-                let templateName: String
-                let existingTemplate: WalletTransactionConfig.Template?
-                if resolvedTemplateChoice != createNewTemplateOption, let existing = config.templates[resolvedTemplateChoice] {
-                    templateName = resolvedTemplateChoice
-                    existingTemplate = existing
-                } else {
-                    let newName: String
-                    if let newTemplateName {
-                        newName = newTemplateName
-                    } else {
-                        logger.log("creating new template — requesting template name")
-                        newName = try await $newTemplateName.requestValue(IntentDialog(stringLiteral: String(localized: "Template name?")))
-                        touchDraft()
-                    }
-                    templateName = newName
-                    existingTemplate = config.templates[newName]
-                }
-
-                let resolvedDescription: String
-                if let descriptionOverride {
-                    resolvedDescription = descriptionOverride
-                } else {
-                    logger.log("template=\(templateName, privacy: .public) — requesting description")
-                    let prompt = String(format: String(localized: "Description for \"%@\"?"), merchant)
-                    resolvedDescription = try await $descriptionOverride.requestValue(IntentDialog(stringLiteral: prompt))
-                    touchDraft()
-                }
-
-                let pattern: String
-                if let autoMatchPattern {
-                    pattern = autoMatchPattern
-                } else {
-                    logger.log("description=\(resolvedDescription, privacy: .public) — requesting auto-match pattern")
-                    let prompt = String(
-                        format: String(localized: "Match other merchant names to %@ too? Enter text/regex, or leave blank to skip."),
-                        resolvedDescription
-                    )
-                    pattern = try await $autoMatchPattern.requestValue(IntentDialog(stringLiteral: prompt))
-                    touchDraft()
-                }
-                logger.log("autoMatchPattern=\"\(pattern, privacy: .public)\"")
+                // No stored mapping for this merchant: auto-file it under the
+                // default Splitwise template rather than walking the user
+                // through template/description/auto-match/split-option setup.
+                // The description just defaults to the merchant name (rename
+                // it later in Templates), and the split question is still
+                // asked because the default template's option is `.ask`.
+                // Customization (a second "Don't Split" template, moving
+                // merchants over, auto-match rules) all happens in-app later.
+                let templateName = config.ensureSplitwiseDefaultTemplate()
+                let template = config.templates[templateName]
 
                 let resolvedFriend = try await resolveFriend(
-                    existing: existingTemplate?.splitwiseFriend,
+                    existing: template?.splitwiseFriend,
                     dialog: IntentDialog(stringLiteral: String(format: String(localized: "Split %@ expenses with which friend?"), templateName))
                 )
 
-                let resolvedSplitOption: SplitwiseTemplateOption
-                if let existingTemplate {
-                    resolvedSplitOption = existingTemplate.splitwiseOption
-                } else {
-                    if let splitOptionOverride {
-                        resolvedSplitOption = splitOptionOverride
-                    } else {
-                        logger.log("template=\(templateName, privacy: .public) — requesting split option")
-                        resolvedSplitOption = try await $splitOptionOverride.requestDisambiguation(
-                            among: [.ask, .always, .manual, .never],
-                            dialog: IntentDialog(stringLiteral: String(format: String(localized: "Split %@ expenses with Splitwise?"), templateName))
-                        )
-                        touchDraft()
-                    }
+                var updated = template ?? WalletTransactionConfig.Template()
+                // Pin the resolved friend onto the template so future
+                // merchants filed here skip the ask — matching the
+                // known-merchant branch above. Leaving "Split With" as
+                // Default in Templates resets it to follow the app-wide
+                // default friend again.
+                if updated.splitwiseFriend == nil {
+                    updated.splitwiseFriendId = resolvedFriend.id
+                    updated.splitwiseFriendFirstName = resolvedFriend.firstName
+                    updated.splitwiseFriendFullName = resolvedFriend.fullName
                 }
-
-                var template = existingTemplate ?? WalletTransactionConfig.Template()
-                template.splitwiseFriendId = resolvedFriend.id
-                template.splitwiseFriendFirstName = resolvedFriend.firstName
-                template.splitwiseFriendFullName = resolvedFriend.fullName
-                template.splitwiseOption = resolvedSplitOption
-                if !pattern.isEmpty {
-                    template.autoMatch.append(.init(pattern: pattern, payeeName: resolvedDescription))
-                }
-                config.templates[templateName] = template
+                config.templates[templateName] = updated
                 config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(
-                    payeeName: resolvedDescription,
+                    payeeName: merchant,
                     templateName: templateName
                 )
-                expenseDescription = resolvedDescription
+                expenseDescription = merchant
                 friendId = resolvedFriend.id
                 friendFirstName = resolvedFriend.firstName
                 friendFullName = resolvedFriend.fullName
-                splitOption = resolvedSplitOption
+                splitOption = updated.splitwiseOption
                 changed = true
             }
 

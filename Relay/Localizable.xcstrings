@@ -737,6 +737,9 @@
         }
       }
     },
+    "Default for new merchants" : {
+
+    },
     "Delete" : {
       "localizations" : {
         "de" : {
@@ -802,6 +805,7 @@
       }
     },
     "Description for \"%@\"?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1863,6 +1867,9 @@
           }
         }
       }
+    },
+    "Shared Expenses" : {
+
     },
     "Shortcut Error" : {
       "localizations" : {

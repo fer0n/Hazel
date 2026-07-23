@@ -303,8 +303,14 @@ struct TemplateEditView: View {
             resolvedFriend = nil
         }
 
+        // Preserve the "default Splitwise template" flag across edits (and
+        // renames) — save() rebuilds the template from the form's fields,
+        // which don't include it, so it would otherwise be silently dropped.
+        let wasSplitwiseDefault = templateName.flatMap { config.templates[$0]?.isSplitwiseDefault } ?? false
+
         let template = WalletTransactionConfig.Template(
             categoryId: selectedCategoryId,
+            isSplitwiseDefault: wasSplitwiseDefault,
             autoMatch: cleanedRules,
             splitwiseOption: splitwiseOption,
             splitwiseFriendId: resolvedFriend?.id,

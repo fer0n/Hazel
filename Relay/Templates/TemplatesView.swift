@@ -21,6 +21,20 @@ struct TemplatesView: View {
     @State private var config = WalletTransactionConfigStore.load()
     @State private var pendingDeletion: String?
 
+    /// The default Splitwise template ("Shared Expenses" unless renamed) —
+    /// pinned to the top since it's where new merchants are auto-filed. Only
+    /// when Splitwise is connected, matching when it actually behaves as the
+    /// default (and when its "Default for new merchants" subtitle shows);
+    /// otherwise it just sorts into the normal list like any other template.
+    private var pinnedDefaultName: String? {
+        guard splitwiseAuth.isAuthenticated else { return nil }
+        return config.templates.first(where: { $0.value.isSplitwiseDefault })?.key
+    }
+
+    private var otherTemplateNames: [String] {
+        config.templates.keys.filter { $0 != pinnedDefaultName }.sorted()
+    }
+
     var body: some View {
         List {
             Section {
@@ -32,25 +46,21 @@ struct TemplatesView: View {
             }
             .cardRowBackground()
 
-            Section {
-                ForEach(config.templates.keys.sorted(), id: \.self) { name in
-                    NavigationLink {
-                        TemplateEditView(templateName: name, onSave: { _ in reload() }, onDelete: reload)
-                    } label: {
-                        TemplateRow(
-                            name: name,
-                            template: config.templates[name] ?? WalletTransactionConfig.Template(),
-                            splitwiseConnected: splitwiseAuth.isAuthenticated
-                        )
-                    }
-                    .swipeActions {
-                        Button("Delete", role: .destructive) {
-                            pendingDeletion = name
-                        }
+            if let pinnedDefaultName {
+                Section {
+                    templateLink(name: pinnedDefaultName)
+                }
+                .cardRowBackground()
+            }
+
+            if !otherTemplateNames.isEmpty {
+                Section {
+                    ForEach(otherTemplateNames, id: \.self) { name in
+                        templateLink(name: name)
                     }
                 }
+                .cardRowBackground()
             }
-            .cardRowBackground()
         }
         .themedList(background: .backgroundColor)
         .navigationTitle("Templates")
@@ -74,6 +84,24 @@ struct TemplatesView: View {
                     deleteTemplate(pendingDeletion)
                 }
                 pendingDeletion = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func templateLink(name: String) -> some View {
+        NavigationLink {
+            TemplateEditView(templateName: name, onSave: { _ in reload() }, onDelete: reload)
+        } label: {
+            TemplateRow(
+                name: name,
+                template: config.templates[name] ?? WalletTransactionConfig.Template(),
+                splitwiseConnected: splitwiseAuth.isAuthenticated
+            )
+        }
+        .swipeActions {
+            Button("Delete", role: .destructive) {
+                pendingDeletion = name
             }
         }
     }
@@ -132,7 +160,13 @@ private struct TemplateRow: View {
     }
 
     private var subtitle: String {
-        var parts = ["\(template.autoMatch.count) auto-match rule\(template.autoMatch.count == 1 ? "" : "s")"]
+        var parts: [String] = []
+        // Only meaningful once Splitwise is connected — it's the template new
+        // Splitwise merchants get auto-filed under.
+        if splitwiseConnected, template.isSplitwiseDefault {
+            parts.append(String(localized: "Default for new merchants"))
+        }
+        parts.append("\(template.autoMatch.count) auto-match rule\(template.autoMatch.count == 1 ? "" : "s")")
         if splitwiseConnected, template.splitwiseOption != .never {
             parts.append(template.splitwiseOption.label)
         }
