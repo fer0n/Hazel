@@ -23,9 +23,48 @@ struct WalletTransactionConfig: Codable {
     var templates: [String: Template] = [:]
     var cards: [String: String] = [:]
 
+    init() {}
+
+    /// Tolerant decoder, same rationale as `Template`'s: all three fields
+    /// default to empty, so an older config written before one of them
+    /// existed must fall back rather than throw. The synthesized decoder
+    /// throws `keyNotFound` for a missing key even when the property has a
+    /// default — and `WalletTransactionConfigStore.load()` turns any decode
+    /// failure into a blank config, so a missing top-level key would wipe
+    /// every saved merchant/template/card. This is the type most likely to
+    /// gain new fields, so it's the one that most needs the guard.
+    ///
+    /// Declared in the primary body (not an extension like `Template`'s):
+    /// for the top-level type an extension `init(from:)` does not displace
+    /// the synthesized witness, so the tolerance was silently ignored. The
+    /// explicit `init()` above keeps the empty-config initializer callers
+    /// rely on, which declaring any initializer would otherwise suppress.
+    /// `encode(to:)` stays synthesized, keeping the on-disk shape unchanged.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.merchants = try container.decodeIfPresent([String: MerchantInfo].self, forKey: .merchants) ?? [:]
+        self.templates = try container.decodeIfPresent([String: Template].self, forKey: .templates) ?? [:]
+        self.cards = try container.decodeIfPresent([String: String].self, forKey: .cards) ?? [:]
+    }
+
+    /// The three fields identifying a cached Splitwise friend, in the shape
+    /// they're passed around in: `Template`'s stored friend, the value the
+    /// intents resolve, and what `SplitwiseFriendEntity` mirrors. Named so
+    /// the same tuple doesn't get re-spelled at every signature.
+    typealias CachedFriend = (id: Int, firstName: String, fullName: String)
+
+    /// Every field is required (no defaults), so the compiler-synthesized
+    /// decoder is safe here — a missing key is a genuinely corrupt entry.
+    /// If a *defaulted* field is ever added, give this the tolerant
+    /// `init(from:)` treatment `Template` and `WalletTransactionConfig` use,
+    /// or an older config missing the key wipes on load (see store).
     struct MerchantInfo: Codable {
         var payeeName: String
         var templateName: String
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case merchants, templates, cards
     }
 
     struct Template: Codable {
@@ -61,9 +100,22 @@ struct WalletTransactionConfig: Codable {
         /// nil unless all three friend fields are set — a template can have
         /// some but not all filled in only via manual JSON edits, which this
         /// treats the same as "no cached friend, ask when needed."
-        var splitwiseFriend: (id: Int, firstName: String, fullName: String)? {
+        var splitwiseFriend: WalletTransactionConfig.CachedFriend? {
             guard let id = splitwiseFriendId, let firstName = splitwiseFriendFirstName, let fullName = splitwiseFriendFullName else { return nil }
             return (id, firstName, fullName)
+        }
+
+        /// Caches `friend` on this template unless it already has one — an
+        /// existing cached friend is left untouched. Shared by both intent
+        /// branches and `recordSplitwiseMerchantLink` so the "backfill a
+        /// missing friend, never overwrite" rule lives in exactly one place.
+        /// Returns whether it wrote anything, so callers can track `changed`.
+        mutating func cacheSplitwiseFriendIfMissing(_ friend: WalletTransactionConfig.CachedFriend) -> Bool {
+            guard splitwiseFriend == nil else { return false }
+            splitwiseFriendId = friend.id
+            splitwiseFriendFirstName = friend.firstName
+            splitwiseFriendFullName = friend.fullName
+            return true
         }
 
         enum CodingKeys: String, CodingKey {
@@ -72,6 +124,9 @@ struct WalletTransactionConfig: Codable {
         }
     }
 
+    /// Both fields required, so the synthesized decoder is safe (see the
+    /// note on `MerchantInfo`); switch to a tolerant `init(from:)` if a
+    /// defaulted field is ever added here.
     struct AutoMatchRule: Codable, Equatable {
         var pattern: String
         var payeeName: String
@@ -118,14 +173,11 @@ struct WalletTransactionConfig: Codable {
         merchant: String,
         payeeName: String,
         templateName: String,
-        friend: (id: Int, firstName: String, fullName: String)
+        friend: CachedFriend
     ) -> Bool {
         var changed = false
         var template = templates[templateName] ?? Template()
-        if template.splitwiseFriend == nil {
-            template.splitwiseFriendId = friend.id
-            template.splitwiseFriendFirstName = friend.firstName
-            template.splitwiseFriendFullName = friend.fullName
+        if template.cacheSplitwiseFriendIfMissing(friend) {
             templates[templateName] = template
             changed = true
         }

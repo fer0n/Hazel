@@ -31,7 +31,7 @@ extension SplitwiseFriendEntity {
     /// Builds an entity straight from a template's cached-friend tuple
     /// (`WalletTransactionConfig.Template.splitwiseFriend`), which carries
     /// the same three fields.
-    init(templateFriend: (id: Int, firstName: String, fullName: String)) {
+    init(templateFriend: WalletTransactionConfig.CachedFriend) {
         self.init(id: templateFriend.id, firstName: templateFriend.firstName, fullName: templateFriend.fullName)
     }
 }

@@ -78,4 +78,25 @@ struct WalletTransactionConfigDecodingTests {
 
         #expect(decoded.templates.values.filter(\.isSplitwiseDefault).count == 1)
     }
+
+    /// The same tolerant-decoder guard applied to the top-level config: a
+    /// config written before one of its dictionaries existed (here `cards`)
+    /// must still decode, keeping the other maps, rather than throwing
+    /// `keyNotFound` and wiping everything. Regression coverage for the
+    /// most likely place a new field gets added.
+    @Test
+    func decodesTopLevelConfigMissingAKey() throws {
+        let json = """
+        {
+          "templates": {
+            "Groceries": { "autoMatch": [], "splitwiseOption": "never" }
+          }
+        }
+        """
+        let config = try JSONDecoder().decode(WalletTransactionConfig.self, from: Data(json.utf8))
+
+        #expect(config.templates.count == 1)
+        #expect(config.merchants.isEmpty)
+        #expect(config.cards.isEmpty)
+    }
 }

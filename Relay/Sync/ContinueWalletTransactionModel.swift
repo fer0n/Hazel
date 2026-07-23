@@ -867,21 +867,15 @@ final class ContinueWalletTransactionModel {
             finalTemplateName = finalPayeeName
         }
 
-        let finalFriendId: Int
-        let finalFriendFirstName: String
-        let finalFriendFullName: String
+        let finalFriend: WalletTransactionConfig.CachedFriend
         if templateHasFriend, let existing = config.templates[finalTemplateName]?.splitwiseFriend {
-            finalFriendId = existing.id
-            finalFriendFirstName = existing.firstName
-            finalFriendFullName = existing.fullName
+            finalFriend = existing
         } else {
             guard let selectedFriendId, let match = friends.first(where: { $0.id == selectedFriendId }) else {
                 errorMessage = "Pick a Splitwise friend."
                 return false
             }
-            finalFriendId = match.id
-            finalFriendFirstName = match.firstName
-            finalFriendFullName = match.fullName
+            finalFriend = (match.id, match.firstName, match.fullName)
         }
 
         if !isManual {
@@ -894,7 +888,7 @@ final class ContinueWalletTransactionModel {
                 merchant: merchant,
                 payeeName: finalPayeeName,
                 templateName: finalTemplateName,
-                friend: (id: finalFriendId, firstName: finalFriendFirstName, fullName: finalFriendFullName)
+                friend: finalFriend
             )
         }
 
@@ -926,7 +920,7 @@ final class ContinueWalletTransactionModel {
             _ = try await SplitwiseExpenseHelper.addExpense(
                 amount: amount,
                 description: finalDescription,
-                friend: SplitwiseFriendEntity(id: finalFriendId, firstName: finalFriendFirstName, fullName: finalFriendFullName),
+                friend: SplitwiseFriendEntity(templateFriend: finalFriend),
                 ownShare: ownShare
             )
             TransactionDraftGuard.complete(draft.id)

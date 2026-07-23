@@ -106,7 +106,7 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
         // already-cached friend) if there is one, otherwise a manual
         // override via the shortcut parameter, otherwise the app-wide
         // default friend, otherwise asks live.
-        func resolveFriend(existing: (id: Int, firstName: String, fullName: String)?, dialog: IntentDialog) async throws -> (id: Int, firstName: String, fullName: String) {
+        func resolveFriend(existing: WalletTransactionConfig.CachedFriend?, dialog: IntentDialog) async throws -> WalletTransactionConfig.CachedFriend {
             if let existing { return existing }
             let friend: SplitwiseFriendEntity
             if let friendOverride {
@@ -160,15 +160,12 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                 friendId = resolved.id
                 friendFirstName = resolved.firstName
                 friendFullName = resolved.fullName
-                if template?.splitwiseFriend == nil {
-                    // The template didn't have a friend yet (e.g. it was
-                    // only ever used from the YNAB intent) — fix it now so
-                    // future runs skip asking, same as a freshly-created
-                    // template below.
-                    var updated = template ?? WalletTransactionConfig.Template()
-                    updated.splitwiseFriendId = resolved.id
-                    updated.splitwiseFriendFirstName = resolved.firstName
-                    updated.splitwiseFriendFullName = resolved.fullName
+                // Backfill the friend if the template didn't have one yet
+                // (e.g. it was only ever used from the YNAB intent) so future
+                // runs skip asking — same rule as a freshly-created template
+                // below, shared via cacheSplitwiseFriendIfMissing.
+                var updated = template ?? WalletTransactionConfig.Template()
+                if updated.cacheSplitwiseFriendIfMissing(resolved) {
                     config.templates[info.templateName] = updated
                     changed = true
                 }
@@ -189,27 +186,24 @@ nonisolated struct AddWalletTransactionToSplitwiseIntent: AppIntent {
                     dialog: IntentDialog(stringLiteral: String(format: String(localized: "Split %@ expenses with which friend?"), templateName))
                 )
 
-                var updated = template ?? WalletTransactionConfig.Template()
-                // Pin the resolved friend onto the template so future
-                // merchants filed here skip the ask — matching the
-                // known-merchant branch above. Leaving "Split With" as
-                // Default in Templates resets it to follow the app-wide
-                // default friend again.
-                if updated.splitwiseFriend == nil {
-                    updated.splitwiseFriendId = resolvedFriend.id
-                    updated.splitwiseFriendFirstName = resolvedFriend.firstName
-                    updated.splitwiseFriendFullName = resolvedFriend.fullName
-                }
-                config.templates[templateName] = updated
-                config.merchants[merchant] = WalletTransactionConfig.MerchantInfo(
+                // File the merchant under the default template and pin the
+                // resolved friend onto it (unless it already had one) so
+                // future merchants filed here skip the ask. Same shared path
+                // the in-app Splitwise submit uses; `changed` stays true
+                // regardless since ensureSplitwiseDefaultTemplate may have
+                // just created the template. Leaving "Split With" as Default
+                // in Templates resets it to follow the app-wide default again.
+                _ = config.recordSplitwiseMerchantLink(
+                    merchant: merchant,
                     payeeName: merchant,
-                    templateName: templateName
+                    templateName: templateName,
+                    friend: resolvedFriend
                 )
                 expenseDescription = merchant
                 friendId = resolvedFriend.id
                 friendFirstName = resolvedFriend.firstName
                 friendFullName = resolvedFriend.fullName
-                splitOption = updated.splitwiseOption
+                splitOption = config.templates[templateName]?.splitwiseOption ?? .never
                 changed = true
             }
 
