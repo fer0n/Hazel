@@ -19,6 +19,7 @@ struct SplitwiseFriendTransactionsView: View {
     @State private var expenses: [SplitwiseExpense] = []
     @State private var loadError: String?
     @State private var selectedExpense: SplitwiseExpense?
+    @State private var deleteError: String?
     /// Set once `load()` re-fetches the friend list, so the subtitle balance
     /// tracks the same data that refreshes ContentView's balance card rather
     /// than staying frozen on the push-time snapshot.
@@ -43,6 +44,11 @@ struct SplitwiseFriendTransactionsView: View {
                         row(for: expense)
                     }
                     .cardRowBackground()
+                    .swipeActions {
+                        Button("Delete", role: .destructive) {
+                            Task { await deleteWithSwipe(expense) }
+                        }
+                    }
                 }
             }
         }
@@ -63,6 +69,13 @@ struct SplitwiseFriendTransactionsView: View {
                 TransactionDetailView(source: .splitwiseExpense(expense, friendName: friend.shortName, onDelete: { try await delete(expense) }))
             }
             .presentationBackground(Color.sheetBackgroundColor)
+        }
+        .alert("Couldn't Delete", isPresented: .init(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let deleteError {
+                Text(deleteError)
+            }
         }
     }
 
@@ -134,6 +147,17 @@ struct SplitwiseFriendTransactionsView: View {
         try await SplitwiseService.deleteExpense(id: expense.id, token: token)
         expenses.removeAll { $0.id == expense.id }
         SplitwiseExpenseCacheStore.save(friendId: friend.id, expenses)
+    }
+
+    /// Row swipe action's entry point into `delete(_:)` — unlike the sheet's
+    /// `onDelete`, a swipe action isn't already inside a `do/catch` showing
+    /// its own alert, so this adds that here.
+    private func deleteWithSwipe(_ expense: SplitwiseExpense) async {
+        do {
+            try await delete(expense)
+        } catch {
+            deleteError = "Please check your connection and try again."
+        }
     }
 }
 
